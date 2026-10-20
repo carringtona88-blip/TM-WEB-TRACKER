@@ -1,114 +1,23 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TM Web Tracker</title>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <main class="shell">
-      <section class="topbar" aria-label="Faction overview">
-        <div class="brand">
-          <img src="./tm-logo.png" alt="TM faction logo" />
-          <div>
-          <p class="eyebrow">Leader tools</p>
-          <h1>TM Web Tracker</h1>
-          </div>
-        </div>
-        <div class="sheet-status" id="sheetStatus" aria-live="polite">Loading sheet...</div>
-      </section>
-
-      <section class="controls" aria-label="Event finder controls">
-        <label>
-          <span>Monthly Tab</span>
-          <select id="sheetSelect"></select>
-        </label>
-        <label>
-          <span>Event field</span>
-          <select id="eventSelect"></select>
-        </label>
-        <label>
-          <span>Find</span>
-          <select id="directionSelect">
-            <option value="none">All Scores</option>
-            <option value="highest">Highest</option>
-            <option value="lowest">Lowest</option>
-          </select>
-        </label>
-        <label>
-          <span>Results</span>
-          <select id="resultLimitSelect">
-            <option value="999">All</option>
-            <option value="5">Top 5</option>
-            <option value="10">Top 10</option>
-            <option value="25">Top 25</option>
-          </select>
-        </label>
-        <label>
-          <span>Score filter</span>
-          <select id="scoreFilterSelect">
-            <option value="all">Include zeros</option>
-            <option value="nonzero">Exclude zeros</option>
-            <option value="below14k">Below 14k</option>
-            <option value="below18m">Below 1.8m</option>
-            <option value="below120">Below 120m</option>
-            <option value="below80">Below 80m</option>
-          </select>
-        </label>
-      </section>
-
-      <section class="metrics" aria-label="Current sheet summary">
-        <article>
-          <span>Members In Tab</span>
-          <strong id="memberCount">0</strong>
-        </article>
-        <article>
-          <span>Current Month</span>
-          <strong id="currentMonth">-</strong>
-        </article>
-      </section>
-
-      <section class="dashboard-grid">
-        <section class="panel finder" aria-label="Top five results">
-          <div class="panel-head">
-            <h2 id="finderTitle">Results</h2>
-            <span id="finderMeta"></span>
-          </div>
-          <div id="finderList" class="rank-list"></div>
-        </section>
-
-        <section class="panel player" aria-label="Player monthly scores">
-          <div class="panel-head">
-            <h2 id="playerTitle">Player Scores</h2>
-            <span id="playerMeta"></span>
-          </div>
-          <div class="player-search">
-            <label class="search">
-              <span>Search member</span>
-              <input id="searchInput" type="search" placeholder="Type a player name..." />
-            </label>
-          </div>
-          <div id="playerScores" class="score-grid"></div>
-        </section>
-
-        <section class="panel roster" aria-label="Player lookup table">
-          <div class="panel-head">
-            <h2>Player Lookup</h2>
-            <span id="rosterMeta"></span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr id="tableHead"></tr>
-              </thead>
-              <tbody id="tableBody"></tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-    </main>
-
-    <script src="./app.js?v=10"></script>
-  </body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Toxic Mafia Score Search</title><style>
+:root{--bg:#000;--card:#121212;--line:#303030;--ink:#f4f4f4;--mute:#aaa;--violet:#a875ff;--cyan:#4fdbe8;--toxic:#8dff00;--green:#67dfa2;--red:#ff8796}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 Segoe UI,system-ui,sans-serif}header,main{max-width:1420px;margin:auto}header{padding:22px 24px 12px;display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--cyan)}h1{font-size:27px;margin:3px 0 0}.sub{color:var(--mute);font-size:12px;text-align:right}main{padding:0 24px 36px}.filters{display:grid;grid-template-columns:2fr repeat(5,1fr);gap:7px;padding:9px;background:#0d0d0d;border:1px solid var(--line);border-radius:9px}.filters label{display:grid;gap:3px;color:var(--mute);font-size:10px;font-weight:700}.filters input,.filters select{width:100%;background:#181818;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:7px}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}.button{border:1px solid var(--line);border-radius:5px;background:#181818;color:var(--ink);padding:6px 10px;font-weight:700;cursor:pointer}.button:hover{border-color:var(--toxic)}.grid{display:grid;grid-template-columns:7fr 5fr;gap:12px}.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:14px}.card h2{font-size:17px;margin:0 0 7px}.event-name{font-size:23px;margin:2px 0}.muted{color:var(--mute)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:10px}.metric{background:#191919;border:1px solid #303030;border-radius:5px;padding:8px}.metric b{display:block;font-size:16px}.metric span{color:var(--mute);font-size:11px}.legend{display:flex;gap:9px;flex-wrap:wrap;margin:8px 0;color:var(--mute);font-size:12px}.good{color:var(--green)}.bad{color:var(--red)}.neutral{color:var(--mute)}.tablewrap{border:1px solid var(--line);border-radius:7px;overflow:auto;max-height:620px}table{border-collapse:collapse;width:100%}th,td{padding:7px 9px;border-bottom:1px solid #292929;text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#191919;color:#ddd;font-size:10px;letter-spacing:.04em;text-transform:uppercase}tbody tr:hover{background:#1b1b1b}tr:last-child td{border:0}.link{color:var(--toxic);font-weight:750;cursor:pointer}.rank{color:var(--cyan);font-weight:800}.chip{display:inline-block;border-radius:14px;padding:3px 8px;background:#242424;font-size:12px}.empty{padding:24px;text-align:center;color:var(--mute)}.section{margin:11px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:#d6daea}@media(max-width:980px){.filters{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){header{display:block;padding:18px 14px}.sub{text-align:left;margin-top:6px}main{padding:0 14px 25px}.filters{grid-template-columns:1fr}}
+</style></head><body><header><div><div class="eyebrow">Offline event tracker</div><h1>Toxic Mafia Score Search</h1></div><div class="sub" id="summary"></div></header><main>
+<div class="filters"><label>Search<input id="textSearch" placeholder="Player or event name…"></label><label>Month<select id="month"></select></label><label>Event / contest<select id="event"></select></label><label>Player<select id="player"></select></label><label>1% status<select id="status"><option value="all">All entries</option><option value="met">At/above 1%</option><option value="below">Below 1% (includes zero)</option><option value="noTarget">No 1% target recorded</option><option value="placement">Placement / average only</option></select></label><label>Ranking<select id="ranking"><option value="all">Full ranking</option><option value="top5">Top 5</option><option value="top10">Top 10</option><option value="bottom5">Bottom 5</option><option value="bottom10">Bottom 10</option></select></label></div>
+<div class="buttons"><button class="button" id="reset">Reset filters</button><button class="button" id="playerBtn">Open player profile</button><button class="button" id="eventBtn">Open event details</button></div><section id="detail"></section><section id="results"></section></main><script id="data" type="application/json">{}</script><script>
+const LIVE_SHEETS=[['August 2026 - Draw Into Battle','1588727259'],['September 2026 - KayFabe Confidential','21159579'],['October 2026 - Reign Of Terror','186867806']],LIVE_BASE='https://docs.google.com/spreadsheets/d/e/2PACX-1vQJaXUhYtlXdxzmbR_aqMxWsSYM3vcMgA3l_7qZt9CQ0T-w9iSzBVOqfnzwnJcCq8OCcsq1iDwmYbgB/pub?single=true&output=csv&gid=';
+function csv(text){let rows=[[]],cell='',quoted=false;for(let i=0;i<text.length;i++){let ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(ch===','&&!quoted){rows.at(-1).push(cell);cell=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;rows.at(-1).push(cell);cell='';rows.push([])}else cell+=ch}if(cell||rows.at(-1).length)rows.at(-1).push(cell);return rows.filter(r=>r.some(x=>x!==''))}function clean(value){return String(value??'').replace(/\s+/g,' ').trim()}function number(value){let match=clean(value).toLowerCase().replace(/[, ]/g,'').match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);return match?Number(match[1])*({k:1e3,m:1e6,b:1e9}[match[2]]||1):null}function rankValue(value){let match=clean(value).match(/\d+/);return match?Number(match[0]):null}function liveType(name){let label=name.toLowerCase().replaceAll('fued','feud');if(label.includes('average'))return'Player monthly average';if(label.includes('flash feud'))return'Flash Feud';if(label.includes('feud'))return'Feud';if(label.includes('kick'))return'Kickoff';if(label.includes('total')||label.includes('rank for'))return'Summary';if(label.includes('contest')||label.includes('competition')||label.includes('loot'))return'Contest';return'Event'}function placementColumn(name){return['k/o','k/0','ko','feud'].includes(name.toLowerCase().replaceAll(' ',''))}
+async function loadLiveData(){let events=[],records=[],index=new Map();for(let [sheetIndex,[sheetName,gid]] of LIVE_SHEETS.entries()){let month=sheetName.split(' - ')[0],response=await fetch(LIVE_BASE+gid,{cache:'no-store'});if(!response.ok)throw Error('Could not load '+month);let rows=csv(await response.text()),prior=null;for(let col=1;col<(rows[0]||[]).length;col++){let label=clean(rows[0][col]);if(!label)continue;if(placementColumn(label)&&prior){for(let row=6;row<rows.length;row++){let player=clean(rows[row][0]),value=number(rows[row][col]);let record=index.get(prior.id+'\u0000'+player.toLowerCase());if(player&&value!==null&&record)record.rank=value}prior.placementLabel=label;continue}let event={id:sheetIndex+':'+col,order:sheetIndex*100+col,name:label,month,type:liveType(label),duration:clean(rows[1]?.[col]),maxScore:number(rows[2]?.[col]),factionRank:rankValue(rows[3]?.[col]),factionScore:number(rows[4]?.[col]),target:number(rows[5]?.[col]),targetLabel:clean(rows[5]?.[col]),placementLabel:'',valueType:'score'};events.push(event);prior=event;for(let row=6;row<rows.length;row++){let player=clean(rows[row][0]),score=number(rows[row][col]);if(player&&score!==null){let record={p:player,pk:player.toLowerCase(),e:event.id,s:score,rank:null};records.push(record);index.set(event.id+'\u0000'+record.pk,record)}}}for(let event of events){let values=records.filter(r=>r.e===event.id).map(r=>r.s),label=event.name.toLowerCase();if(label.includes('average'))event.valueType='average';else if(label.includes('rank')||(event.target&&values.length&&Math.max(...values)<=100&&values.every(Number.isInteger)))event.valueType='placement'}return{events,records}}
+async function initializeApp(){const D=await loadLiveData(),$=s=>document.querySelector(s),events=new Map(D.events.map(e=>[e.id,e])),players=[...new Map(D.records.map(r=>[r.pk,r.p])).entries()].map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name)),fmt=n=>n==null?'—':new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(n),esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const months=[...new Set(D.events.map(e=>e.month))];$('#summary').textContent=`August–October 2026 · ${players.length} players · ${D.events.length} tracked events`;
+function addOptions(select,items,label,value){select.innerHTML=`<option value="">${label}</option>`+items.map(x=>`<option value="${esc(x[value])}">${esc(x[label==='All players'?'name':label==='All events / contests'?'name':'month']||x.name||x.month)}</option>`).join('')}
+function latestEvent(){return D.events.find(e=>e.name.toLowerCase().startsWith('reign of terror kickoff'))||[...D.events].filter(e=>e.factionScore!==null).at(-1)}function populate(){addOptions($('#month'),months.map(month=>({month})),'All months','month');refreshEvents();let latest=latestEvent();if(latest)$('#event').value=latest.id;addOptions($('#player'),players,'All players','id')}function refreshEvents(){let m=$('#month').value,list=D.events.filter(e=>!m||e.month===m);$('#event').innerHTML='<option value="">All events / contests</option>'+list.map(e=>`<option value="${e.id}">${esc(e.name)} — ${esc(e.month)}</option>`).join('')}
+function status(r,e){if(e.valueType==='placement'||e.valueType==='average')return'placement';if(!e.target)return'noTarget';return r.s>=e.target?'met':'below'}function filtered(){let term=$('#textSearch').value.trim().toLowerCase(),m=$('#month').value,eid=$('#event').value,p=$('#player').value,st=$('#status').value;return D.records.filter(r=>{let e=events.get(r.e);return(!m||e.month===m)&&(!eid||r.e===eid)&&(!p||r.pk===p)&&(!term||(r.p+' '+e.name+' '+e.month).toLowerCase().includes(term))&&(st==='all'||status(r,e)===st)})}
+function sortRows(rows){let mode=$('#ranking').value;if(!$('#event').value)return [...rows].sort((a,b)=>events.get(a.e).order-events.get(b.e).order||a.p.localeCompare(b.p));let event=events.get($('#event').value),copy=[...rows].sort((a,b)=>event.valueType==='placement'?a.s-b.s:b.s-a.s);if(mode==='top5')return copy.slice(0,5);if(mode==='top10')return copy.slice(0,10);if(mode==='bottom5')return copy.slice(-5).reverse();if(mode==='bottom10')return copy.slice(-10).reverse();return copy}
+function table(rows){let selected=$('#event').value?events.get($('#event').value):null,placementOnly=selected?.valueType==='placement';let headers=placementOnly?'<th>Player placement</th><th>1% target</th>':'<th>Player score</th><th>Player placement</th><th>1% target</th><th>1% status</th>';return `<div class="tablewrap"><table><thead><tr><th>#</th><th>Player</th>${headers}<th>Event / contest</th><th>Month</th></tr></thead><tbody>${rows.map((r,i)=>{let e=events.get(r.e),s=status(r,e),label=s==='met'?'At/above 1%':s==='below'?'Below 1%':'';let cells=placementOnly?`<td class="rank">#${fmt(r.s)}</td><td>${e.target?fmt(e.target):'—'}</td>`:e.valueType==='placement'?`<td>—</td><td class="rank">#${fmt(r.s)}</td><td>${e.target?fmt(e.target):'—'}</td><td></td>`:e.valueType==='average'?`<td>${fmt(r.s)}</td><td>—</td><td>—</td><td></td>`:`<td>${fmt(r.s)}</td><td>${r.rank==null?'—':'#'+r.rank}</td><td>${e.target?fmt(e.target):'—'}</td><td class="${s==='met'?'good':s==='below'?'bad':'neutral'}">${label}</td>`;return `<tr><td class="rank">${i+1}</td><td><span class="link" data-player="${r.pk}">${esc(r.p)}</span></td>${cells}<td><span class="link" data-event="${e.id}">${esc(e.name)}</span></td><td>${esc(e.month)}</td></tr>`}).join('')}</tbody></table></div>`}
+function render(){let rows=sortRows(filtered());let e=$('#event').value?events.get($('#event').value):null;$('#detail').innerHTML=e?eventCard(e):'';$('#results').innerHTML=`<div class="section">${e?'Player results for this event':`Matching results (${rows.length})`}</div>${rows.length?table(rows):'<div class="empty">No scores match these filters.</div>'}`;bindLinks()}
+function eventCard(e){let all=D.records.filter(r=>r.e===e.id),met=all.filter(r=>status(r,e)==='met').length,isScore=e.valueType==='score';return `<div class="card"><div class="eyebrow">${esc(e.type)}</div><h2 class="event-name">${esc(e.name)}</h2><div class="muted">${esc(e.month)}${e.duration?' · '+esc(e.duration):''}</div><div class="metrics"><div class="metric"><b>${e.factionRank?'#'+e.factionRank:'—'}</b><span>Faction placement</span></div><div class="metric"><b>${fmt(e.factionScore)}</b><span>Faction score</span></div><div class="metric"><b>${e.target?fmt(e.target):'—'}</b><span>1% minimum</span></div><div class="metric"><b>${isScore&&e.target?met+'/'+all.length:'—'}</b><span>${isScore?'Players at/above 1%':'1% comparison'}</span></div></div><div class="legend">${isScore?`<span class="good">At/above 1%</span><span class="bad">Below 1% (includes zero scores)</span>`:`<span>These entries are ${e.valueType==='average'?'individual monthly averages':'placement positions'} and are not assessed against 1%.</span>`}<span>Player placement uses the linked ${e.placementLabel||'placement'} field when recorded.</span></div></div>`}
+function showPlayer(pk){let p=players.find(x=>x.id===pk),rows=D.records.filter(r=>r.pk===pk).sort((a,b)=>events.get(a.e).order-events.get(b.e).order);$('#player').value=pk;$('#event').value='';$('#textSearch').value='';$('#status').value='all';$('#ranking').value='all';$('#detail').innerHTML=`<div class="card"><div class="eyebrow">Player profile</div><h2 class="event-name">${esc(p.name)}</h2><div class="muted">Every individual score, placement, 1% result, and faction finish from August onward, in chronological order.</div></div>`;$('#results').innerHTML=`<div class="section">${rows.length} recorded results</div>${table(rows)}`;bindLinks()}
+function showEvent(id){let e=events.get(id);$('#event').value=id;$('#player').value='';$('#textSearch').value='';$('#status').value='all';$('#ranking').value='all';render()}
+function bindLinks(){document.querySelectorAll('[data-player]').forEach(x=>x.onclick=()=>showPlayer(x.dataset.player));document.querySelectorAll('[data-event]').forEach(x=>x.onclick=()=>showEvent(x.dataset.event))}
+['textSearch','month','event','player','status','ranking'].forEach(id=>$(('#'+id)).addEventListener(id==='textSearch'?'input':'change',()=>{if(id==='month'){refreshEvents()}render()}));$('#reset').onclick=()=>{let latest=latestEvent();$('#textSearch').value='';$('#month').value='';refreshEvents();$('#event').value=latest.id;$('#player').value='';$('#status').value='all';$('#ranking').value='all';render()};$('#playerBtn').onclick=()=>{let pk=$('#player').value;if(pk)showPlayer(pk)};$('#eventBtn').onclick=()=>{let id=$('#event').value;if(id)showEvent(id)};populate();render();}
+initializeApp().catch(error=>{document.querySelector('main').innerHTML=`<div class="card"><h2>Live sheet unavailable</h2><p class="muted">Refresh in a moment. ${String(error.message)}</p></div>`});
+</script></body></html>
