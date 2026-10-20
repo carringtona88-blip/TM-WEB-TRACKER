@@ -1,23 +1,437 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Toxic Mafia Score Search</title><style>
-:root{--bg:#000;--card:#121212;--line:#303030;--ink:#f4f4f4;--mute:#aaa;--violet:#a875ff;--cyan:#4fdbe8;--toxic:#8dff00;--green:#67dfa2;--red:#ff8796}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 Segoe UI,system-ui,sans-serif}header,main{max-width:1420px;margin:auto}header{padding:22px 24px 12px;display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--cyan)}h1{font-size:27px;margin:3px 0 0}.sub{color:var(--mute);font-size:12px;text-align:right}main{padding:0 24px 36px}.filters{display:grid;grid-template-columns:2fr repeat(5,1fr);gap:7px;padding:9px;background:#0d0d0d;border:1px solid var(--line);border-radius:9px}.filters label{display:grid;gap:3px;color:var(--mute);font-size:10px;font-weight:700}.filters input,.filters select{width:100%;background:#181818;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:7px}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}.button{border:1px solid var(--line);border-radius:5px;background:#181818;color:var(--ink);padding:6px 10px;font-weight:700;cursor:pointer}.button:hover{border-color:var(--toxic)}.grid{display:grid;grid-template-columns:7fr 5fr;gap:12px}.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:14px}.card h2{font-size:17px;margin:0 0 7px}.event-name{font-size:23px;margin:2px 0}.muted{color:var(--mute)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:10px}.metric{background:#191919;border:1px solid #303030;border-radius:5px;padding:8px}.metric b{display:block;font-size:16px}.metric span{color:var(--mute);font-size:11px}.legend{display:flex;gap:9px;flex-wrap:wrap;margin:8px 0;color:var(--mute);font-size:12px}.good{color:var(--green)}.bad{color:var(--red)}.neutral{color:var(--mute)}.tablewrap{border:1px solid var(--line);border-radius:7px;overflow:auto;max-height:620px}table{border-collapse:collapse;width:100%}th,td{padding:7px 9px;border-bottom:1px solid #292929;text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#191919;color:#ddd;font-size:10px;letter-spacing:.04em;text-transform:uppercase}tbody tr:hover{background:#1b1b1b}tr:last-child td{border:0}.link{color:var(--toxic);font-weight:750;cursor:pointer}.rank{color:var(--cyan);font-weight:800}.chip{display:inline-block;border-radius:14px;padding:3px 8px;background:#242424;font-size:12px}.empty{padding:24px;text-align:center;color:var(--mute)}.section{margin:11px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:#d6daea}@media(max-width:980px){.filters{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){header{display:block;padding:18px 14px}.sub{text-align:left;margin-top:6px}main{padding:0 14px 25px}.filters{grid-template-columns:1fr}}
-</style></head><body><header><div><div class="eyebrow">Offline event tracker</div><h1>Toxic Mafia Score Search</h1></div><div class="sub" id="summary"></div></header><main>
-<div class="filters"><label>Search<input id="textSearch" placeholder="Player or event name…"></label><label>Month<select id="month"></select></label><label>Event / contest<select id="event"></select></label><label>Player<select id="player"></select></label><label>1% status<select id="status"><option value="all">All entries</option><option value="met">At/above 1%</option><option value="below">Below 1% (includes zero)</option><option value="noTarget">No 1% target recorded</option><option value="placement">Placement / average only</option></select></label><label>Ranking<select id="ranking"><option value="all">Full ranking</option><option value="top5">Top 5</option><option value="top10">Top 10</option><option value="bottom5">Bottom 5</option><option value="bottom10">Bottom 10</option></select></label></div>
-<div class="buttons"><button class="button" id="reset">Reset filters</button><button class="button" id="playerBtn">Open player profile</button><button class="button" id="eventBtn">Open event details</button></div><section id="detail"></section><section id="results"></section></main><script id="data" type="application/json">{}</script><script>
-const LIVE_SHEETS=[['August 2026 - Draw Into Battle','1588727259'],['September 2026 - KayFabe Confidential','21159579'],['October 2026 - Reign Of Terror','186867806']],LIVE_BASE='https://docs.google.com/spreadsheets/d/e/2PACX-1vQJaXUhYtlXdxzmbR_aqMxWsSYM3vcMgA3l_7qZt9CQ0T-w9iSzBVOqfnzwnJcCq8OCcsq1iDwmYbgB/pub?single=true&output=csv&gid=';
-function csv(text){let rows=[[]],cell='',quoted=false;for(let i=0;i<text.length;i++){let ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(ch===','&&!quoted){rows.at(-1).push(cell);cell=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;rows.at(-1).push(cell);cell='';rows.push([])}else cell+=ch}if(cell||rows.at(-1).length)rows.at(-1).push(cell);return rows.filter(r=>r.some(x=>x!==''))}function clean(value){return String(value??'').replace(/\s+/g,' ').trim()}function number(value){let match=clean(value).toLowerCase().replace(/[, ]/g,'').match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);return match?Number(match[1])*({k:1e3,m:1e6,b:1e9}[match[2]]||1):null}function rankValue(value){let match=clean(value).match(/\d+/);return match?Number(match[0]):null}function liveType(name){let label=name.toLowerCase().replaceAll('fued','feud');if(label.includes('average'))return'Player monthly average';if(label.includes('flash feud'))return'Flash Feud';if(label.includes('feud'))return'Feud';if(label.includes('kick'))return'Kickoff';if(label.includes('total')||label.includes('rank for'))return'Summary';if(label.includes('contest')||label.includes('competition')||label.includes('loot'))return'Contest';return'Event'}function placementColumn(name){return['k/o','k/0','ko','feud'].includes(name.toLowerCase().replaceAll(' ',''))}
-async function loadLiveData(){let events=[],records=[],index=new Map();for(let [sheetIndex,[sheetName,gid]] of LIVE_SHEETS.entries()){let month=sheetName.split(' - ')[0],response=await fetch(LIVE_BASE+gid,{cache:'no-store'});if(!response.ok)throw Error('Could not load '+month);let rows=csv(await response.text()),prior=null;for(let col=1;col<(rows[0]||[]).length;col++){let label=clean(rows[0][col]);if(!label)continue;if(placementColumn(label)&&prior){for(let row=6;row<rows.length;row++){let player=clean(rows[row][0]),value=number(rows[row][col]);let record=index.get(prior.id+'\u0000'+player.toLowerCase());if(player&&value!==null&&record)record.rank=value}prior.placementLabel=label;continue}let event={id:sheetIndex+':'+col,order:sheetIndex*100+col,name:label,month,type:liveType(label),duration:clean(rows[1]?.[col]),maxScore:number(rows[2]?.[col]),factionRank:rankValue(rows[3]?.[col]),factionScore:number(rows[4]?.[col]),target:number(rows[5]?.[col]),targetLabel:clean(rows[5]?.[col]),placementLabel:'',valueType:'score'};events.push(event);prior=event;for(let row=6;row<rows.length;row++){let player=clean(rows[row][0]),score=number(rows[row][col]);if(player&&score!==null){let record={p:player,pk:player.toLowerCase(),e:event.id,s:score,rank:null};records.push(record);index.set(event.id+'\u0000'+record.pk,record)}}}for(let event of events){let values=records.filter(r=>r.e===event.id).map(r=>r.s),label=event.name.toLowerCase();if(label.includes('average'))event.valueType='average';else if(label.includes('rank')||(event.target&&values.length&&Math.max(...values)<=100&&values.every(Number.isInteger)))event.valueType='placement'}return{events,records}}
-async function initializeApp(){const D=await loadLiveData(),$=s=>document.querySelector(s),events=new Map(D.events.map(e=>[e.id,e])),players=[...new Map(D.records.map(r=>[r.pk,r.p])).entries()].map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name)),fmt=n=>n==null?'—':new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(n),esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-const months=[...new Set(D.events.map(e=>e.month))];$('#summary').textContent=`August–October 2026 · ${players.length} players · ${D.events.length} tracked events`;
-function addOptions(select,items,label,value){select.innerHTML=`<option value="">${label}</option>`+items.map(x=>`<option value="${esc(x[value])}">${esc(x[label==='All players'?'name':label==='All events / contests'?'name':'month']||x.name||x.month)}</option>`).join('')}
-function latestEvent(){return D.events.find(e=>e.name.toLowerCase().startsWith('reign of terror kickoff'))||[...D.events].filter(e=>e.factionScore!==null).at(-1)}function populate(){addOptions($('#month'),months.map(month=>({month})),'All months','month');refreshEvents();let latest=latestEvent();if(latest)$('#event').value=latest.id;addOptions($('#player'),players,'All players','id')}function refreshEvents(){let m=$('#month').value,list=D.events.filter(e=>!m||e.month===m);$('#event').innerHTML='<option value="">All events / contests</option>'+list.map(e=>`<option value="${e.id}">${esc(e.name)} — ${esc(e.month)}</option>`).join('')}
-function status(r,e){if(e.valueType==='placement'||e.valueType==='average')return'placement';if(!e.target)return'noTarget';return r.s>=e.target?'met':'below'}function filtered(){let term=$('#textSearch').value.trim().toLowerCase(),m=$('#month').value,eid=$('#event').value,p=$('#player').value,st=$('#status').value;return D.records.filter(r=>{let e=events.get(r.e);return(!m||e.month===m)&&(!eid||r.e===eid)&&(!p||r.pk===p)&&(!term||(r.p+' '+e.name+' '+e.month).toLowerCase().includes(term))&&(st==='all'||status(r,e)===st)})}
-function sortRows(rows){let mode=$('#ranking').value;if(!$('#event').value)return [...rows].sort((a,b)=>events.get(a.e).order-events.get(b.e).order||a.p.localeCompare(b.p));let event=events.get($('#event').value),copy=[...rows].sort((a,b)=>event.valueType==='placement'?a.s-b.s:b.s-a.s);if(mode==='top5')return copy.slice(0,5);if(mode==='top10')return copy.slice(0,10);if(mode==='bottom5')return copy.slice(-5).reverse();if(mode==='bottom10')return copy.slice(-10).reverse();return copy}
-function table(rows){let selected=$('#event').value?events.get($('#event').value):null,placementOnly=selected?.valueType==='placement';let headers=placementOnly?'<th>Player placement</th><th>1% target</th>':'<th>Player score</th><th>Player placement</th><th>1% target</th><th>1% status</th>';return `<div class="tablewrap"><table><thead><tr><th>#</th><th>Player</th>${headers}<th>Event / contest</th><th>Month</th></tr></thead><tbody>${rows.map((r,i)=>{let e=events.get(r.e),s=status(r,e),label=s==='met'?'At/above 1%':s==='below'?'Below 1%':'';let cells=placementOnly?`<td class="rank">#${fmt(r.s)}</td><td>${e.target?fmt(e.target):'—'}</td>`:e.valueType==='placement'?`<td>—</td><td class="rank">#${fmt(r.s)}</td><td>${e.target?fmt(e.target):'—'}</td><td></td>`:e.valueType==='average'?`<td>${fmt(r.s)}</td><td>—</td><td>—</td><td></td>`:`<td>${fmt(r.s)}</td><td>${r.rank==null?'—':'#'+r.rank}</td><td>${e.target?fmt(e.target):'—'}</td><td class="${s==='met'?'good':s==='below'?'bad':'neutral'}">${label}</td>`;return `<tr><td class="rank">${i+1}</td><td><span class="link" data-player="${r.pk}">${esc(r.p)}</span></td>${cells}<td><span class="link" data-event="${e.id}">${esc(e.name)}</span></td><td>${esc(e.month)}</td></tr>`}).join('')}</tbody></table></div>`}
-function render(){let rows=sortRows(filtered());let e=$('#event').value?events.get($('#event').value):null;$('#detail').innerHTML=e?eventCard(e):'';$('#results').innerHTML=`<div class="section">${e?'Player results for this event':`Matching results (${rows.length})`}</div>${rows.length?table(rows):'<div class="empty">No scores match these filters.</div>'}`;bindLinks()}
-function eventCard(e){let all=D.records.filter(r=>r.e===e.id),met=all.filter(r=>status(r,e)==='met').length,isScore=e.valueType==='score';return `<div class="card"><div class="eyebrow">${esc(e.type)}</div><h2 class="event-name">${esc(e.name)}</h2><div class="muted">${esc(e.month)}${e.duration?' · '+esc(e.duration):''}</div><div class="metrics"><div class="metric"><b>${e.factionRank?'#'+e.factionRank:'—'}</b><span>Faction placement</span></div><div class="metric"><b>${fmt(e.factionScore)}</b><span>Faction score</span></div><div class="metric"><b>${e.target?fmt(e.target):'—'}</b><span>1% minimum</span></div><div class="metric"><b>${isScore&&e.target?met+'/'+all.length:'—'}</b><span>${isScore?'Players at/above 1%':'1% comparison'}</span></div></div><div class="legend">${isScore?`<span class="good">At/above 1%</span><span class="bad">Below 1% (includes zero scores)</span>`:`<span>These entries are ${e.valueType==='average'?'individual monthly averages':'placement positions'} and are not assessed against 1%.</span>`}<span>Player placement uses the linked ${e.placementLabel||'placement'} field when recorded.</span></div></div>`}
-function showPlayer(pk){let p=players.find(x=>x.id===pk),rows=D.records.filter(r=>r.pk===pk).sort((a,b)=>events.get(a.e).order-events.get(b.e).order);$('#player').value=pk;$('#event').value='';$('#textSearch').value='';$('#status').value='all';$('#ranking').value='all';$('#detail').innerHTML=`<div class="card"><div class="eyebrow">Player profile</div><h2 class="event-name">${esc(p.name)}</h2><div class="muted">Every individual score, placement, 1% result, and faction finish from August onward, in chronological order.</div></div>`;$('#results').innerHTML=`<div class="section">${rows.length} recorded results</div>${table(rows)}`;bindLinks()}
-function showEvent(id){let e=events.get(id);$('#event').value=id;$('#player').value='';$('#textSearch').value='';$('#status').value='all';$('#ranking').value='all';render()}
-function bindLinks(){document.querySelectorAll('[data-player]').forEach(x=>x.onclick=()=>showPlayer(x.dataset.player));document.querySelectorAll('[data-event]').forEach(x=>x.onclick=()=>showEvent(x.dataset.event))}
-['textSearch','month','event','player','status','ranking'].forEach(id=>$(('#'+id)).addEventListener(id==='textSearch'?'input':'change',()=>{if(id==='month'){refreshEvents()}render()}));$('#reset').onclick=()=>{let latest=latestEvent();$('#textSearch').value='';$('#month').value='';refreshEvents();$('#event').value=latest.id;$('#player').value='';$('#status').value='all';$('#ranking').value='all';render()};$('#playerBtn').onclick=()=>{let pk=$('#player').value;if(pk)showPlayer(pk)};$('#eventBtn').onclick=()=>{let id=$('#event').value;if(id)showEvent(id)};populate();render();}
-initializeApp().catch(error=>{document.querySelector('main').innerHTML=`<div class="card"><h2>Live sheet unavailable</h2><p class="muted">Refresh in a moment. ${String(error.message)}</p></div>`});
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toxic Mafia Scores</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eceff3;--panel:#fff;--ink:#151a24;--mute:#5b6676;--line:#d5dae2;--met:#17744a;--below:#c1273f;--accent:#23395d;--accent-ink:#fff;--soft:#f2f4f8;
+--head:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#0f131a;--panel:#181e28;--ink:#e9edf3;--mute:#98a3b3;--line:#2a3340;--met:#45c486;--below:#ff6b7f;--accent:#8fb0ec;--accent-ink:#0d1422;--soft:#1f2632}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body)}
+.top{background:var(--accent);color:var(--accent-ink);padding:18px 20px 0}
+.top-in,main{max-width:1100px;margin:0 auto}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{font:700 2rem/1 var(--head);margin:0 0 2px;letter-spacing:.01em}
+.sub{margin:0 0 12px;opacity:.9;font-size:.9rem}
+#refresh{font:inherit;font-size:.85rem;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px;padding:5px 12px;cursor:pointer;opacity:.9}
+nav{display:flex;gap:4px}
+nav button{font:600 1.05rem var(--head);background:transparent;color:inherit;border:0;padding:9px 16px;border-radius:8px 8px 0 0;cursor:pointer;opacity:.75}
+nav button[aria-selected=true]{background:var(--bg);color:var(--ink);opacity:1}
+main{padding:16px 20px 56px}
+#banner{margin:0 0 12px;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:.9rem}
+#banner.warn{border-left:4px solid var(--below)}
+#controls{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--mute)}
+select,input[type=search],.dd>summary{font:inherit;font-size:.95rem;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:40px}
+select{max-width:min(420px,88vw)}
+input[type=search]{min-width:200px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dd{position:relative}
+.dd>summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:center;user-select:none}
+.dd>summary::-webkit-details-marker{display:none}
+.dd>summary::after{content:"";width:6px;height:6px;border-right:2px solid var(--mute);border-bottom:2px solid var(--mute);transform:rotate(45deg) translateY(-2px)}
+.dd[open]>summary{border-color:var(--accent)}
+.menu{position:absolute;z-index:6;top:calc(100% + 4px);left:0;min-width:230px;max-height:320px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 10px 28px rgba(0,0,0,.2)}
+.menu .acts{display:flex;gap:12px;padding:4px 8px 6px;font-size:.85rem}
+.menu .acts a{color:var(--accent);cursor:pointer;text-decoration:underline}
+.menu label{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:.93rem;color:var(--ink)}
+.menu label:hover{background:var(--soft)}
+.facts{display:flex;flex-wrap:wrap;gap:8px 24px;margin:2px 0 14px}
+.fact{display:flex;flex-direction:column}
+.fact b{font:700 1.5rem/1.1 var(--head)}
+.fact.big b{font-size:2.1rem}
+.fact span{font-size:.78rem;color:var(--mute)}
+h2{font:700 1.4rem/1.2 var(--head);margin:0 0 8px}
+h3{font:700 1.1rem/1.2 var(--head);margin:0 0 6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:16px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.box ol{margin:0;padding:0;list-style:none}
+.box li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}
+.box li:last-child{border-bottom:0}
+.box li b{font-weight:600}
+.box li i{font-style:normal;color:var(--mute);white-space:nowrap}
+.box.top-b{border-top:3px solid var(--met)}.box.bot-b{border-top:3px solid var(--below)}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font:600 .95rem var(--head);color:var(--mute);white-space:nowrap;background:var(--soft)}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:.8rem;font-weight:600;border:1px solid currentColor;white-space:nowrap}
+.pill.met{color:var(--met)}.pill.below{color:var(--below)}.pill.none{color:var(--mute);border-color:var(--line)}
+.meter{position:relative;height:8px;width:120px;background:var(--soft);border-radius:4px;border:1px solid var(--line)}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.meter i.met{background:var(--met)}.meter i.below{background:var(--below)}
+.meter u{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:var(--ink);opacity:.7}
+.note{color:var(--mute);font-size:.88rem;margin:0 0 12px}
+.empty{padding:28px;text-align:center;color:var(--mute)}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.sugg button{font:inherit;font-size:.9rem;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:3px 12px;cursor:pointer}
+.small{font-size:.82rem;color:var(--mute)}
+code{background:var(--soft);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <div class="row">
+    <div><h1>Toxic Mafia Scores</h1><p class="sub" id="src">Loading…</p></div>
+    <button id="refresh" type="button">Refresh data</button>
+  </div>
+  <nav role="tablist" id="nav">
+    <button role="tab" data-v="event">Contest</button>
+    <button role="tab" data-v="player">Player</button>
+    <button role="tab" data-v="watch">Watchlist</button>
+  </nav>
+</div></div>
+<main>
+  <div id="banner" hidden></div>
+  <div id="controls"></div>
+  <div id="out"></div>
+</main>
+
+<!-- Saved copy of the data, used only if the live sheet can't be reached. Optional. -->
+<script src="data.js" onerror="void 0"></script>
+<script>
+/* ================= SETTINGS ================= */
+const CONFIG = {
+  // The long code from your published link: docs.google.com/spreadsheets/d/e/<THIS PART>/pubhtml
+  publishKey: "2PACX-1vQJaXUhYtlXdxzmbR_aqMxWsSYM3vcMgA3l_7qZt9CQ0T-w9iSzBVOqfnzwnJcCq8OCcsq1iDwmYbgB",
+
+  // Only tabs from this month onward are used. The tab name must start with this text.
+  firstMonth: "August 2026",
+
+  // Tabs to read. Leave empty [] and the page tries to find every tab itself.
+  // If it can't, list them: open each tab in Google Sheets, copy the number after "gid=" in the address bar.
+  // Example: [{name:"August 2026", gid:"123456789"}, {name:"September 2026", gid:"987654321"}]
+  // Add one line per new month if automatic detection doesn't work.
+  tabs: []
+};
+/* ============================================ */
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const trim = x => x.toFixed(2).replace(/\.?0+$/, "");
+const short = n => n == null ? "—" : n >= 1e9 ? trim(n/1e9)+"b" : n >= 1e6 ? trim(n/1e6)+"m" : n >= 1e3 ? trim(n/1e3)+"k" : String(n);
+const ord = n => { if (n == null) return "—"; const s = ["th","st","nd","rd"], v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); };
+const html = (el, h) => el.innerHTML = h;
+
+/* ---------- Read the sheet ---------- */
+function parseCSV(text){
+  const out = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ","){ row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r"){ if (c === "\r" && text[i+1] === "\n") i++; row.push(cell); cell = ""; out.push(row); row = []; }
+    else cell += c;
+  }
+  if (cell !== "" || row.length){ row.push(cell); out.push(row); }
+  return out; // blank rows are kept on purpose so row numbers stay the same as the sheet
+}
+const num = v => {
+  if (v == null) return null;
+  const s = String(v).trim().toLowerCase().replace(/,/g, "");
+  const m = s.match(/^([\d.]+)\s*([kmb]?)$/);
+  return m ? parseFloat(m[1]) * ({"":1, k:1e3, m:1e6, b:1e9}[m[2]]) : null;
+};
+const rankNum = v => { const m = String(v ?? "").match(/\d+/); return m ? +m[0] : null; };
+function kind(t){
+  t = t.toLowerCase();
+  if (t.includes("rank for")) return "Rank";
+  if (t.includes("average")) return "Average";
+  if (t.includes("faction contest") && t.includes("flash")) return "Faction Contest";
+  if (/total|combined/.test(t)) return "Flash Feud Total";
+  if (/flash\s*fe?u+e?d\s*\d/.test(t)) return "Flash Feud";
+  if (t.includes("boss battle")) return "Boss Battle";
+  if (/kick\s*off/.test(t)) return "Kick Off";
+  if (/\bfe?u+e?d\b/.test(t)) return "Feud";
+  if (t.includes("loot")) return "Loot Contest";
+  return "Faction Contest";
+}
+function buildMonth(name, rows){
+  const [label, , theme] = name.split(/( - )/);
+  const players = [];
+  for (const r of rows.slice(6)){
+    const a = (r[0] || "").trim();
+    if (a.toUpperCase() === "KEY") break;
+    if (a) players.push(r);
+  }
+  const events = [], head = rows[0] || [];
+  for (let j = 1; j < head.length; j++){
+    let title = (head[j] || "").replace(/\s+/g, " ").trim();
+    if (!title || /roster size/i.test(title)) continue;
+    const s = {};
+    players.forEach(r => { const v = num(r[j]); if (v != null) s[r[0].trim()] = v; });
+    const vals = Object.values(s);
+    if (!vals.length) continue;
+    const ty = kind(title);
+    events.push({t: title, ty, m: (ty === "Rank" || ty === "Average" || (vals.length >= 3 && Math.max(...vals) <= 100)) ? "rank" : "score",
+      op: num((rows[5] || [])[j]), fr: rankNum((rows[3] || [])[j]), fs: num((rows[4] || [])[j]), s});
+  }
+  return {label: label.trim(), theme: (theme || "").trim(), events};
+}
+async function discoverTabs(base){
+  const res = await fetch(base + "pubhtml", {cache: "no-store"});
+  if (!res.ok) throw new Error("couldn't list the tabs (HTTP " + res.status + ")");
+  const txt = await res.text(), tabs = [];
+  const re = /name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*pageUrl:\s*"((?:[^"\\]|\\.)*)"/g;
+  let m;
+  while ((m = re.exec(txt))){
+    const g = m[2].match(/gid=(\d+)/); if (!g) continue;
+    let nm = m[1].replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\\//g, "/").replace(/\\"/g, '"');
+    tabs.push({name: nm, gid: g[1]});
+  }
+  if (!tabs.length) throw new Error("couldn't find the tab list in the published page");
+  return tabs;
+}
+async function loadLive(){
+  const base = `https://docs.google.com/spreadsheets/d/e/${CONFIG.publishKey}/`;
+  let tabs = CONFIG.tabs.length ? CONFIG.tabs : await discoverTabs(base);
+  const i = tabs.findIndex(t => t.name.toLowerCase().startsWith(CONFIG.firstMonth.toLowerCase()));
+  if (i >= 0) tabs = tabs.slice(i);
+  const months = await Promise.all(tabs.map(async t => {
+    const r = await fetch(`${base}pub?gid=${t.gid}&single=true&output=csv`, {cache: "no-store"});
+    if (!r.ok) throw new Error(`couldn't read the "${t.name}" tab (HTTP ${r.status})`);
+    return buildMonth(t.name, parseCSV(await r.text()));
+  }));
+  return months;
+}
+
+/* ---------- App data ---------- */
+let M = [], allPlayers = [], allTypes = [], monthOpts = [], typeOpts = [], current = "event";
+const CATS = {
+  "All contests": null,
+  "Kick offs": ["Kick Off"],
+  "Feuds (all feuds, flash feuds, totals)": ["Feud", "Flash Feud", "Flash Feud Total"],
+  "Faction contests (contests, loot, boss battles)": ["Faction Contest", "Loot Contest", "Boss Battle"],
+  "Ranks and averages": ["Rank", "Average"]
+};
+function derive(){
+  M.forEach(m => m.events.forEach(e => {
+    const ent = Object.entries(e.s); e.n = ent.length; e.pos = {};
+    if (e.m === "rank") ent.forEach(([p, v]) => e.pos[p] = v);
+    else { const sv = ent.map(x => x[1]).sort((a, b) => b - a); ent.forEach(([p, v]) => e.pos[p] = sv.indexOf(v) + 1); }
+  }));
+  allPlayers = [...new Set(M.flatMap(m => m.events.flatMap(e => Object.keys(e.s))))].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}));
+  allTypes = [...new Set(M.flatMap(m => m.events.map(e => e.ty)))];
+  monthOpts = M.map((m, i) => ({v: i, l: m.label}));
+  typeOpts = allTypes.map(t => ({v: t, l: t}));
+}
+async function load(){
+  $("#src").textContent = "Loading the sheet…";
+  const b = $("#banner"); b.hidden = true; b.className = "";
+  try{
+    M = await loadLive();
+    if (!M.some(m => m.events.length)) throw new Error("the tabs were read but no contests were found");
+    $("#src").textContent = "Live from Google Sheets · loaded " + new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) + " · August onwards";
+  } catch (err){
+    if (window.DATA){
+      M = window.DATA.months;
+      $("#src").textContent = "Saved copy (August onwards)";
+      b.hidden = false; b.className = "warn";
+      b.innerHTML = "Couldn't reach the live sheet (" + esc(err.message || err) + "), so this is the saved copy from <code>data.js</code>. See the settings at the top of <code>index.html</code> to fix the live link.";
+    } else {
+      M = []; $("#src").textContent = "No data";
+      b.hidden = false; b.className = "warn";
+      b.innerHTML = "Couldn't load the sheet: " + esc(err.message || err) + ". Check that the sheet is published to the web (File → Share → Publish to web → Entire document) and see the settings at the top of <code>index.html</code>.";
+    }
+  }
+  derive();
+}
+
+/* ---------- Shared bits ---------- */
+const mon = i => M[i].label.split(" ")[0].slice(0, 3);
+const status = (e, v) => (e.m !== "score" || e.op == null || v == null) ? null : (v >= e.op ? "met" : "below");
+const pill = st => st ? `<span class="pill ${st}">${st === "met" ? "Met 1%" : "Below 1%"}</span>` : `<span class="pill none">No target</span>`;
+const meter = (e, v) => (e.m === "score" && e.op && v != null)
+  ? `<div class="meter" title="${Math.round(v/e.op*100)}% of 1% value"><i class="${status(e,v)}" style="width:${Math.min(v/e.op/2,1)*100}%"></i><u></u></div>` : "";
+const pctOf = (e, v) => (e.m === "score" && e.op && v != null) ? Math.round(v/e.op*100) + "%" : "";
+
+function multi(label, opts, sel, onChange){
+  const d = document.createElement("details"); d.className = "dd";
+  const wrap = document.createElement("label"); wrap.className = "f"; wrap.append(label);
+  const s = document.createElement("summary"), menu = document.createElement("div"); menu.className = "menu";
+  const upd = () => s.textContent = sel.size === opts.length ? "All" : sel.size === 0 ? "None" : sel.size + " selected";
+  menu.innerHTML = '<div class="acts"><a data-a="all">Select all</a><a data-a="none">Clear</a></div>';
+  opts.forEach(o => {
+    const l = document.createElement("label");
+    l.innerHTML = '<input type="checkbox"><span></span>'; l.querySelector("span").textContent = o.l;
+    const c = l.querySelector("input"); c.checked = sel.has(o.v);
+    c.onchange = () => { c.checked ? sel.add(o.v) : sel.delete(o.v); upd(); onChange(); };
+    menu.append(l);
+  });
+  menu.querySelector('[data-a=all]').onclick = () => { opts.forEach(o => sel.add(o.v)); menu.querySelectorAll("input").forEach(c => c.checked = true); upd(); onChange(); };
+  menu.querySelector('[data-a=none]').onclick = () => { sel.clear(); menu.querySelectorAll("input").forEach(c => c.checked = false); upd(); onChange(); };
+  upd(); d.append(s, menu); wrap.append(d); return wrap;
+}
+document.addEventListener("click", e => document.querySelectorAll(".dd[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; }));
+
+/* ============ CONTEST VIEW ============ */
+function viewEvent(){
+  let mi = M.length - 1;
+  html($("#controls"), `
+    <label class="f">Month<select id="mo">${M.map((m,i)=>`<option value="${i}">${esc(m.label)}</option>`).join("")}</select></label>
+    <label class="f">Contest type<select id="ty"><option value="">All types</option>${allTypes.map(t=>`<option>${esc(t)}</option>`).join("")}</select></label>
+    <label class="f">Contest<select id="ev"></select></label>
+    <label class="f">Show<select id="sf"><option value="all">All players</option><option value="below">Below 1% value</option><option value="met">Met / above 1% value</option><option value="top5">Top 5</option><option value="bot5">Bottom 5</option></select></label>
+    <label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>`);
+  $("#mo").value = mi;
+  const fillEv = () => {
+    const ty = $("#ty").value;
+    $("#ev").innerHTML = M[mi].events.map((e,i)=>({e,i})).filter(x => !ty || x.e.ty === ty).map(x=>`<option value="${x.i}">${esc(x.e.t)}</option>`).join("");
+  };
+  fillEv();
+  $("#mo").onchange = e => { mi = +e.target.value; fillEv(); draw(); };
+  $("#ty").onchange = () => { fillEv(); draw(); };
+  $("#ev").onchange = draw; $("#sf").onchange = draw; $("#pq").oninput = draw;
+
+  function draw(){
+    const ev = M[mi] && M[mi].events[+$("#ev").value];
+    if (!ev || $("#ev").value === "") return html($("#out"), '<div class="empty">No contests match.</div>');
+    const isRank = ev.m === "rank";
+    const sorted = Object.entries(ev.s).map(([p,v]) => ({p, v, pos: ev.pos[p], st: status(ev, v)}))
+      .sort((a,b) => isRank ? a.v - b.v : b.v - a.v);
+    const cnt = {met:0, below:0}; sorted.forEach(x => { if (x.st) cnt[x.st]++; });
+    const top = sorted.slice(0,5), bot = sorted.slice(-5).reverse();
+    const sf = $("#sf").value, q = $("#pq").value.trim().toLowerCase();
+    let rows = sf === "top5" ? top : sf === "bot5" ? bot : sorted.filter(x => sf === "all" || x.st === sf);
+    if (q) rows = rows.filter(x => x.p.toLowerCase().includes(q));
+    const li = x => `<li><b>${esc(x.p)}</b><i>${isRank ? "Rank " + fmt(x.v) : fmt(x.v)}</i></li>`;
+    html($("#out"), `
+      <h2>${esc(ev.t)}</h2>
+      <div class="facts">
+        <div class="fact big"><b>${ord(ev.fr)}</b><span>Faction position</span></div>
+        <div class="fact big"><b>${fmt(ev.fs)}</b><span>Faction score</span></div>
+        <div class="fact"><b>${ev.op ? short(ev.op) : "—"}</b><span>1% value</span></div>
+        <div class="fact"><b>${esc(ev.ty)}</b><span>Type</span></div>
+        ${ev.op && !isRank ? `<div class="fact"><b style="color:var(--met)">${cnt.met}</b><span>Met 1%</span></div><div class="fact"><b style="color:var(--below)">${cnt.below}</b><span>Below 1%</span></div>` : ""}
+        <div class="fact"><b>${sorted.length}</b><span>Players listed</span></div>
+      </div>
+      ${isRank ? '<p class="note">This contest only has each player\'s rank (1 is best), not a score, so it can\'t be checked against the 1% value.</p>'
+        : !ev.op ? '<p class="note">No 1% value was recorded for this contest.</p>' : ""}
+      <div class="grid">
+        <div class="box top-b"><h3>Top 5</h3><ol>${top.map(li).join("")}</ol></div>
+        <div class="box bot-b"><h3>Bottom 5</h3><ol>${bot.map(li).join("")}</ol></div>
+      </div>
+      <div class="wrap"><table><thead><tr><th class="n">Position</th><th>Player</th><th class="n">${isRank?"Rank":"Score"}</th><th>Progress to 1% value</th><th class="n">% of target</th><th>Status</th></tr></thead><tbody>
+      ${rows.length ? rows.map(x=>`<tr><td class="n">${x.pos}</td><td>${esc(x.p)}</td><td class="n">${fmt(x.v)}</td><td>${meter(ev,x.v)}</td><td class="n">${pctOf(ev,x.v)}</td><td>${pill(x.st)}</td></tr>`).join("")
+        : '<tr><td colspan="6" class="empty">No players match.</td></tr>'}
+      </tbody></table></div>
+      <p class="small">The bar fills to 2× the 1% value; the vertical line marks the target.</p>`);
+  }
+  draw();
+}
+
+/* ============ PLAYER VIEW ============ */
+function viewPlayer(){
+  const mSel = new Set(M.map((_, i) => i)); let name = "";
+  html($("#controls"), `
+    <label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label><datalist id="pl">${allPlayers.map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    <label class="f">Contests<select id="cat">${Object.keys(CATS).map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
+    <label class="f">1% value<select id="th"><option value="all">All</option><option value="below">Below 1%</option><option value="met">Met / above 1%</option></select></label>
+    <label class="f">Show<select id="sh"><option value="all">All, in order</option><option value="best">Best 5 scores</option><option value="low">Lowest 5 scores</option></select></label>`);
+  $("#controls").append(multi("Months", monthOpts, mSel, draw));
+  $("#pq").oninput = e => { const v = e.target.value.trim().toLowerCase(); name = allPlayers.find(p => p.toLowerCase() === v) || ""; draw(); };
+  ["cat","th","sh"].forEach(id => $("#" + id).onchange = draw);
+  $("#out").onclick = e => { const b = e.target.closest("[data-p]"); if (b){ name = b.dataset.p; $("#pq").value = name; draw(); } };
+
+  function draw(){
+    const q = $("#pq").value.trim().toLowerCase();
+    if (!name){
+      const m = q ? allPlayers.filter(p => p.toLowerCase().includes(q)).slice(0, 24) : [];
+      return html($("#out"), q ? (m.length ? `<p class="note">Pick a player:</p><div class="sugg">${m.map(p=>`<button data-p="${esc(p)}">${esc(p)}</button>`).join("")}</div>` : '<div class="empty">No player with that name.</div>')
+        : '<div class="empty">Search for a player to see their kick off, feud and contest scores for every month.</div>');
+    }
+    const types = CATS[$("#cat").value], th = $("#th").value, sh = $("#sh").value;
+    let rows = [];
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
+      if ((!types || types.includes(e.ty)) && e.s[name] != null) rows.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name])});
+    }); });
+    if (th !== "all") rows = rows.filter(r => r.st === th);
+    const scored = rows.filter(r => r.e.m === "score");
+    const hi = scored.reduce((a, r) => !a || r.v > a.v ? r : a, null), lo = scored.reduce((a, r) => !a || r.v < a.v ? r : a, null);
+    const judged = rows.filter(r => r.st), met = judged.filter(r => r.st === "met").length;
+    const avgPos = rows.length ? Math.round(rows.reduce((s, r) => s + r.pos, 0) / rows.length) : null;
+    const bestPos = rows.length ? Math.min(...rows.map(r => r.pos)) : null;
+    let shown = rows;
+    if (sh !== "all") shown = [...rows].sort((a, b) => (a.pos / a.e.n) - (b.pos / b.e.n)).slice(sh === "best" ? 0 : -5);
+    if (sh === "low") shown.reverse();
+    const lab = r => mon(r.mi) + ": " + r.e.t;
+    html($("#out"), `
+      <h2>${esc(name)}</h2>
+      <div class="facts">
+        <div class="fact"><b>${rows.length}</b><span>Entries shown</span></div>
+        <div class="fact"><b>${bestPos ?? "—"}</b><span>Best position</span></div>
+        <div class="fact"><b>${avgPos ?? "—"}</b><span>Average position</span></div>
+        <div class="fact" title="${hi ? esc(lab(hi)) : ""}"><b>${hi ? fmt(hi.v) : "—"}</b><span>Highest score${hi ? " · " + esc(mon(hi.mi)) : ""}</span></div>
+        <div class="fact" title="${lo ? esc(lab(lo)) : ""}"><b>${lo ? fmt(lo.v) : "—"}</b><span>Lowest score${lo ? " · " + esc(mon(lo.mi)) : ""}</span></div>
+        <div class="fact"><b style="color:var(--met)">${met}</b><span>Met 1%</span></div>
+        <div class="fact"><b style="color:var(--below)">${judged.length - met}</b><span>Below 1%</span></div>
+      </div>
+      ${sh !== "all" ? '<p class="note">Best and lowest are judged by position in each contest, so different contests compare fairly.</p>' : ""}
+      <div class="wrap"><table><thead><tr><th>Month</th><th>Contest</th><th>Type</th><th class="n">Score / rank</th><th class="n">Position</th><th class="n">1% value</th><th>Progress</th><th class="n">% of target</th><th>Status</th></tr></thead><tbody>
+      ${shown.length ? shown.map(r=>`<tr><td>${esc(mon(r.mi))}</td><td>${esc(r.e.t)}</td><td>${esc(r.e.ty)}</td><td class="n">${r.e.m==="rank" ? "Rank " + fmt(r.v) : fmt(r.v)}</td><td class="n">${r.pos} of ${r.e.n}</td><td class="n">${r.e.m==="score"?short(r.e.op):""}</td><td>${meter(r.e,r.v)}</td><td class="n">${pctOf(r.e,r.v)}</td><td>${pill(r.st)}</td></tr>`).join("")
+        : '<tr><td colspan="9" class="empty">No entries for these filters.</td></tr>'}
+      </tbody></table></div>`);
+  }
+  draw();
+}
+
+/* ============ WATCHLIST VIEW ============ */
+function viewWatch(){
+  const mSel = new Set(M.map((_, i) => i)), tSel = new Set(allTypes);
+  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
+    <label class="f">Show<select id="sf"><option value="all">All players</option><option value="below">Below 1% at least once</option><option value="clean">Never below 1%</option></select></label>`);
+  $("#controls").append(multi("Months", monthOpts, mSel, draw), multi("Contest types", typeOpts, tSel, draw));
+  $("#pq").oninput = draw; $("#sf").onchange = draw;
+  function draw(){
+    const P = {};
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
+      if (!tSel.has(e.ty) || e.m !== "score" || !e.op) return;
+      Object.entries(e.s).forEach(([p, v]) => {
+        const r = P[p] || (P[p] = {p, met:0, below:0, miss:[]});
+        if (v >= e.op) r.met++; else { r.below++; r.miss.push(mon(mi) + ": " + e.t + " (" + fmt(v) + " / " + short(e.op) + ")"); }
+      });
+    }); });
+    const all = Object.values(P).map(r => ({...r, n: r.met + r.below, pct: r.met / (r.met + r.below)}));
+    const ranked = [...all].sort((a,b) => b.pct - a.pct || b.n - a.n);
+    const q = $("#pq").value.trim().toLowerCase(), sf = $("#sf").value;
+    const rows = [...all].sort((a,b) => b.below - a.below || a.pct - b.pct)
+      .filter(r => (!q || r.p.toLowerCase().includes(q)) && (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0)));
+    const li = r => `<li><b>${esc(r.p)}</b><i>${r.met}/${r.n} met · ${Math.round(r.pct*100)}%</i></li>`;
+    html($("#out"), all.length ? `
+      <p class="note">Counts only contests that have both a score and a 1% value (rank-only contests are left out). A blank cell means the player wasn't listed for that contest; a 0 counts as below.</p>
+      <div class="grid">
+        <div class="box top-b"><h3>Top 5 hit rate</h3><ol>${ranked.slice(0,5).map(li).join("")}</ol></div>
+        <div class="box bot-b"><h3>Bottom 5 hit rate</h3><ol>${ranked.slice(-5).reverse().map(li).join("")}</ol></div>
+      </div>
+      <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th>Contests below 1% value</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td>
+        <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}</td></tr>`).join("")
+        : '<tr><td colspan="6" class="empty">No players match.</td></tr>'}
+      </tbody></table></div>` : '<div class="empty">No contests have both a score and a 1% value for these filters.</div>');
+  }
+  draw();
+}
+
+/* ============ TABS & START ============ */
+const views = {event: viewEvent, player: viewPlayer, watch: viewWatch};
+function go(v){
+  current = v;
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
+  if (!M.length){ html($("#controls"), ""); return html($("#out"), '<div class="empty">No data to show yet.</div>'); }
+  views[v](); history.replaceState(null, "", "#" + v);
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
+$("#refresh").onclick = async () => { await load(); go(current); };
+(async () => { await load(); go(views[location.hash.slice(1)] ? location.hash.slice(1) : "event"); })();
+</script>
+</body>
+</html>
