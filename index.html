@@ -124,6 +124,7 @@ code{background:var(--soft);padding:1px 5px;border-radius:4px}
 </div></div>
 <main>
   <div id="banner" hidden></div>
+  <datalist id="pl"></datalist>
   <div id="controls"></div>
   <div id="out"></div>
 </main>
@@ -291,7 +292,8 @@ let M = [], allPlayers = [], allTypes = [], monthOpts = [], typeOpts = [], curre
 const CATS = {
   "All contests": null,
   "Kick offs": ["Kick Off"],
-  "Feuds": ["Feud", "Flash Feud", "Flash Feud Total"],
+  "Feuds": ["Feud"],
+  "Flash feuds (combined total)": ["Flash Feud Total"],
   "Faction contests": ["Faction Contest"],
   "Loot contests": ["Loot Contest"],
   "Boss battles": ["Boss Battle"]
@@ -309,6 +311,7 @@ function derive(){
   allTypes = [...new Set(M.flatMap(m => m.events.map(e => e.ty)))];
   monthOpts = M.map((m, i) => ({v: i, l: m.label}));
   typeOpts = allTypes.map(t => ({v: t, l: t}));
+  $("#pl").innerHTML = allPlayers.map(p => `<option value="${esc(p)}">`).join("");
 }
 async function load(){
   $("#src").textContent = "Loading the sheet…";
@@ -336,6 +339,8 @@ async function load(){
 
 /* ---------- Shared bits ---------- */
 const mon = i => M[i].label.split(" ")[0].slice(0, 3);
+// Flash feuds 1-4 are only parts of the combined total, so only the total counts in player stats, rankings and the watchlist.
+const inStats = e => e.ty !== "Flash Feud";
 const EXEMPT = ["excused", "quit"];
 const haveFlags = () => M.some(m => m.events.some(e => e.f && Object.keys(e.f).length));
 const status = (e, v, p) => {
@@ -404,6 +409,9 @@ function viewEvent(){
     else if (sf === "below") rows = ps.filter(r => r.below > 0);
     else if (sf === "met") rows = ps.filter(r => r.below === 0 && r.met > 0);
     if (q) rows = rows.filter(r => r.p.toLowerCase().includes(q));
+    if (q) return html($("#out"), `<h2>${esc(M[mi].label)}: players</h2><div class="wrap"><table><thead><tr><th>Player</th><th class="n">Score</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r => `<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${Math.round(r.avg)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td></tr>`).join("") : '<tr><td colspan="5" class="empty">No players match.</td></tr>'}
+      </tbody></table></div>`);
     const tally = e => { let met = 0, below = 0; Object.entries(e.s).forEach(([p, v]) => { const s = status(e, v, p); if (s === "met") met++; else if (s === "below") below++; }); return {met, below}; };
     html($("#out"), `
       <h2>${esc(M[mi].label)}: all contests</h2>
@@ -448,10 +456,10 @@ function viewEvent(){
       </div>
       ${isRank ? '<p class="note">This contest only has each player\'s rank (1 is best), not a score, so it can\'t be checked against the 1% value.</p>'
         : !ev.op ? '<p class="note">No 1% value was recorded for this contest.</p>' : ""}
-      <div class="grid">
+      ${q ? "" : `<div class="grid">
         <div class="box top-b"><h3>Top ${N}</h3><ol>${top.map(li).join("")}</ol></div>
         <div class="box bot-b"><h3>Bottom ${N}</h3><ol>${bot.map(li).join("")}</ol></div>
-      </div>
+      </div>`}
       <div class="wrap"><table><thead><tr><th class="n">Position</th><th>Player</th><th class="n">${isRank?"Rank":"Score"}</th><th>Progress to 1% value</th><th class="n">% of target</th><th>Status</th></tr></thead><tbody>
       ${rows.length ? rows.map(x=>`<tr><td class="n">${x.pos}</td><td>${esc(x.p)}${rosterPill(x.p)}${x.pos <= 3 || (ev.f || {})[x.p] === "top3" ? ' <span class="pill top3">Top 3</span>' : ""}</td><td class="n">${fmt(x.v)}</td><td>${meter(ev,x.v)}</td><td class="n">${pctOf(ev,x.v)}</td><td>${pill(x.st)}</td></tr>`).join("")
         : '<tr><td colspan="6" class="empty">No players match.</td></tr>'}
@@ -467,7 +475,7 @@ const PCT = (e, p) => e.n > 1 ? (1 - (e.pos[p] - 1) / (e.n - 1)) * 100 : 100;
 function perfStats(mSel, types){
   const P = {};
   M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
-    if (e.ty === "Rank" || e.ty === "Average" || (types && !types.includes(e.ty))) return;
+    if (!inStats(e) || e.ty === "Rank" || e.ty === "Average" || (types && !types.includes(e.ty))) return;
     Object.keys(e.s).forEach(p => {
       const r = P[p] || (P[p] = {p, n:0, sum:0, low:0, top:0, met:0, below:0, mo:{}});
       const x = PCT(e, p); r.n++; r.sum += x; if (x <= 25) r.low++; if (x >= 75) r.top++;
@@ -487,23 +495,30 @@ const hitTxt = r => (r.met + r.below) ? Math.round(r.met / (r.met + r.below) * 1
 
 function viewPerf(){
   const mSel = new Set(M.map((_, i) => i));
-  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
+  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#pq").oninput = draw; $("#cat").onchange = draw;
   function draw(){
-    const all = perfStats(mSel, CATS[$("#cat").value]).sort((a, b) => b.avg - a.avg || b.n - a.n);
+    const all = perfStats(mSel, CATS[$("#cat").value]).sort((a, b) => b.avg - a.avg || b.n - a.n).map((r, i) => ({...r, i: i + 1}));
     if (!all.length) return html($("#out"), '<div class="empty">No data for these filters.</div>');
+    const q = $("#pq").value.trim().toLowerCase();
+    const table = rows => `<div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th>Month by month</th><th class="n">Bottom quarter</th><th class="n">1% hit rate</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
+        : '<tr><td colspan="8" class="empty">No players match.</td></tr>'}
+      </tbody></table></div>`;
+    if (q){   // searching: the player's own information goes straight to the top
+      const rows = all.filter(r => r.p.toLowerCase().includes(q)), exact = all.find(r => r.p.toLowerCase() === q);
+      return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2>` + reviewPanel(exact, exact.i, all.length, playerRows(exact.p, mSel)) : "") + table(rows) + '<p class="small">Clear the search box to see the top 20, bottom 20 and growth lists.</p>');
+    }
     const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
     const grow = pool.filter(r => r.delta != null && r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 10);
     const fall = pool.filter(r => r.delta != null && r.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 10);
-    const q = $("#pq").value.trim().toLowerCase();
     const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.avg)} · ${trendTxt(r)}</i></li>`;
     const liD = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${trendTxt(r)} (now ${Math.round(r.ms[r.ms.length-1].avg)})</i></li>`;
     const none = '<li><i>None yet</i></li>';
-    const rows = all.map((r, i) => ({...r, i: i + 1})).filter(r => !q || r.p.toLowerCase().includes(q));
     html($("#out"), `
-      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of 5 points or more counts as improving or declining. Top and bottom 20 only include players in at least ${Math.ceil(maxN/2)} contests.</p>
+      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of 5 points or more counts as improving or declining. Top and bottom 20 only include players in at least ${Math.ceil(maxN/2)} contests. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>
       <div class="grid">
         <div class="box top-b"><h3>Top 20 performers</h3><ol>${pool.slice(0, 20).map(li).join("")}</ol></div>
         <div class="box bot-b"><h3>Bottom 20 performers</h3><ol>${pool.slice(-20).reverse().map(li).join("")}</ol></div>
@@ -512,14 +527,16 @@ function viewPerf(){
         <div class="box top-b"><h3>Growing (most improved)</h3><ol>${grow.length ? grow.map(liD).join("") : none}</ol></div>
         <div class="box bot-b"><h3>Declining</h3><ol>${fall.length ? fall.map(liD).join("") : none}</ol></div>
       </div>
-      <div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th>Month by month</th><th class="n">Bottom quarter</th><th class="n">1% hit rate</th></tr></thead><tbody>
-      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
-        : '<tr><td colspan="8" class="empty">No players match.</td></tr>'}
-      </tbody></table></div>`);
+      ${table(all)}`);
   }
   draw();
 }
 
+function playerRows(name, mSel){
+  const out = [];
+  M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (inStats(e) && e.s[name] != null) out.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name], name)}); }); });
+  return out;
+}
 function reviewPanel(me, rk, total, mine){
   if (!me) return "";
   const lab = r => mon(r.mi) + ": " + r.e.t;
@@ -548,23 +565,20 @@ function playerStats(mine, N = 5){
   const core = mine.filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average");
   if (!core.length) return "";
   const lab = r => mon(r.mi) + ": " + r.e.t;
-  const GROUPS = [["Kick offs", ["Kick Off"]], ["Feuds", ["Feud", "Flash Feud", "Flash Feud Total"]], ["Faction contests", ["Faction Contest", "Loot Contest", "Boss Battle"]]];
-  const strip = (pts, cap) => `<div class="strip" aria-hidden="true">${pts.map(p => `<i style="left:${(p.x*100).toFixed(1)}%" title="${esc(p.t)}"></i>`).join("")}</div><div class="cap"><span>worse</span><span>${cap}</span><span>better</span></div>`;
+  const GROUPS = [["Kick offs", ["Kick Off"]], ["Feuds", ["Feud"]], ["Flash feuds (combined total)", ["Flash Feud Total"]], ["Faction contests", ["Faction Contest", "Loot Contest", "Boss Battle"]]];
   const cards = GROUPS.map(([label, types]) => {
     const rs = core.filter(r => types.includes(r.e.ty)); if (!rs.length) return "";
     const sc = rs.filter(r => r.e.m === "score"), rk = rs.filter(r => r.e.m === "rank");
-    let facts = "", strips = "";
+    let facts = "";
     if (sc.length){
       const hi = sc.reduce((a, r) => r.v > a.v ? r : a), lo = sc.reduce((a, r) => r.v < a.v ? r : a), avg = sc.reduce((s, r) => s + r.v, 0) / sc.length;
       facts += statFact(fmt(hi.v), "Best score", lab(hi)) + statFact(fmt(lo.v), "Lowest score", lab(lo)) + statFact(fmt(avg), "Average score");
-      strips += strip(sc.map(r => ({x: hi.v ? r.v / hi.v : 0, t: lab(r) + " · " + fmt(r.v)})), "each dot = a score");
     }
     if (rk.length){
       const b = rk.reduce((a, r) => r.v < a.v ? r : a), w = rk.reduce((a, r) => r.v > a.v ? r : a);
       facts += statFact("Rank " + fmt(b.v), "Best rank", lab(b)) + statFact("Rank " + fmt(w.v), "Worst rank", lab(w));
-      strips += strip(rk.map(r => ({x: 1 - (Math.min(r.v, 100) - 1) / 99, t: lab(r) + " · rank " + fmt(r.v)})), "each dot = a rank");
     }
-    return `<div class="box"><h3>${label} <span class="small">· ${rs.length} entered</span></h3><div class="facts">${facts}</div>${strips}</div>`;
+    return `<div class="box"><h3>${label} <span class="small">· ${rs.length} entered</span></h3><div class="facts">${facts}</div></div>`;
   }).join("");
   const sorted = [...core].sort((a, b) => a.pos / a.e.n - b.pos / b.e.n);
   const li = r => `<li><b>${esc(lab(r))}</b><i>${r.e.m === "rank" ? "Rank " + fmt(r.v) : fmt(r.v)} · ${r.pos} of ${r.e.n}</i></li>`;
@@ -574,13 +588,13 @@ function playerStats(mine, N = 5){
       <div class="box top-b"><h3>Best ${N} results</h3><ol>${sorted.slice(0, N).map(li).join("")}</ol></div>
       <div class="box bot-b"><h3>Lowest ${N} results</h3><ol>${sorted.slice(-N).reverse().map(li).join("")}</ol></div>
     </div>
-    <p class="note">Best and lowest 5 compare results by position in each contest, so a kick off and a feud can be ranked fairly. Dots on the bars: right is better, and hovering a dot shows the contest.</p>
+    <p class="note">Best and lowest 5 compare results by position in each contest, so a kick off and a feud can be ranked fairly.</p>
     <h3 class="sec">Contest history</h3>`;
 }
 function viewPlayer(){
   const mSel = new Set(M.map((_, i) => i)); let name = "";
   html($("#controls"), `
-    <label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label><datalist id="pl">${allPlayers.map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    <label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
     <label class="f">1% value<select id="th"><option value="all">All</option><option value="below">Below 1%</option><option value="met">Met / above 1%</option></select></label>
     <label class="f">Show<select id="sh"><option value="all">All, in order</option><option value="best5">Best 5</option><option value="best10">Best 10</option><option value="best20">Best 20</option><option value="low5">Lowest 5</option><option value="low10">Lowest 10</option><option value="low20">Lowest 20</option></select></label>`);
@@ -598,7 +612,7 @@ function viewPlayer(){
     }
     const types = CATS[$("#cat").value], th = $("#th").value, sh = $("#sh").value;
     const mine = [];
-    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.s[name] != null) mine.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name], name)}); }); });
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (inStats(e) && e.s[name] != null) mine.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name], name)}); }); });
     let rows = mine.filter(r => !types || types.includes(r.e.ty));
     if (th !== "all") rows = rows.filter(r => r.st === th);
     const judged = rows.filter(r => r.st === "met" || r.st === "below"), met = judged.filter(r => r.st === "met").length;
@@ -629,7 +643,7 @@ function viewPlayer(){
 function posStats(mSel, types){
   const P = {};
   M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
-    if (types && !types.includes(e.ty)) return;
+    if (!inStats(e) || (types && !types.includes(e.ty))) return;
     Object.keys(e.s).forEach(p => {
       const x = e.pos[p], r = P[p] || (P[p] = {p, n:0, sum:0, best:Infinity, worst:0, list:[]});
       r.n++; r.sum += x; r.best = Math.min(r.best, x); r.worst = Math.max(r.worst, x);
@@ -693,7 +707,7 @@ function viewFaction(){
   $("#cat").onchange = draw;
   function draw(){
     const types = CATS[$("#cat").value], pts = [];
-    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.fr != null && (!types || types.includes(e.ty))) pts.push({mi, e, fr: e.fr}); }); });
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (inStats(e) && e.fr != null && (!types || types.includes(e.ty))) pts.push({mi, e, fr: e.fr}); }); });
     if (!pts.length) return html($("#out"), '<div class="empty">No faction results for these filters.</div>');
     const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
     const byM = {}; pts.forEach(p => (byM[p.mi] || (byM[p.mi] = [])).push(p.fr));
@@ -727,38 +741,40 @@ function viewFaction(){
 }
 
 /* ============ WATCHLIST VIEW ============ */
+// Who has missed the 1% value written in the sheet (14k, 120m, 1.8m ...). Used to decide who needs to leave.
 function viewWatch(){
   const mSel = new Set(M.map((_, i) => i)), tSel = new Set(allTypes);
-  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
-    <label class="f">Show<select id="sf"><option value="all">All players</option><option value="below">Below 1% at least once</option><option value="clean">Never below 1%</option></select></label>`);
+  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
+    <label class="f">Show<select id="sf"><option value="below">Below 1% at least once</option><option value="all">All players</option><option value="clean">Met every 1% value</option></select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw), multi("Contest types", typeOpts, tSel, draw));
   $("#pq").oninput = draw; $("#sf").onchange = draw;
   function draw(){
     const P = {};
     M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
-      if (!tSel.has(e.ty) || e.m !== "score" || !e.op) return;
+      if (!inStats(e) || !tSel.has(e.ty) || e.m !== "score" || !e.op) return;
       Object.entries(e.s).forEach(([p, v]) => {
         const r = P[p] || (P[p] = {p, met:0, below:0, ex:0, miss:[]});
-        if (v >= e.op) r.met++; else if (EXEMPT.includes((e.f || {})[p])) r.ex++; else { r.below++; r.miss.push(mon(mi) + ": " + e.t + " (" + fmt(v) + " / " + short(e.op) + ")"); }
+        if (v >= e.op) r.met++;
+        else if (EXEMPT.includes((e.f || {})[p])) r.ex++;
+        else { r.below++; r.miss.push(mon(mi) + ": " + e.t + " (" + fmt(v) + " / " + short(e.op) + ")"); }
       });
     }); });
-    const all = Object.values(P).map(r => ({...r, n: r.met + r.below, pct: r.met / (r.met + r.below)}));
-    const rs = Object.fromEntries(posStats(mSel, [...tSel]).map(r => [r.p, r]));
+    const all = Object.values(P).map(r => ({...r, n: r.met + r.below})).filter(r => r.n > 0).map(r => ({...r, pct: r.met / r.n}));
+    const ps = Object.fromEntries(posStats(mSel, [...tSel]).map(r => [r.p, r]));
     const ro = []; M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.m === "rank" && e.op && tSel.has(e.ty)) ro.push(mon(mi) + ": " + e.t + " (1% value " + short(e.op) + ")"); }); });
-    const ranked = [...all].sort((a,b) => b.pct - a.pct || b.n - a.n);
     const q = $("#pq").value.trim().toLowerCase(), sf = $("#sf").value;
-    const rows = [...all].sort((a,b) => b.below - a.below || a.pct - b.pct)
-      .filter(r => (!q || r.p.toLowerCase().includes(q)) && (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0)));
+    const active = r => roster(r.p) !== "quit";
+    const missed = all.filter(r => r.below > 0 && active(r));
+    const worst = [...missed].sort((a, b) => a.pct - b.pct || b.below - a.below).slice(0, 10);
+    const rows = [...all].sort((a, b) => a.pct - b.pct || b.below - a.below)
+      .filter(r => q ? r.p.toLowerCase().includes(q) : (active(r) && (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0))));
     const li = r => `<li><b>${esc(r.p)}</b><i>${r.met}/${r.n} met · ${Math.round(r.pct*100)}%</i></li>`;
     html($("#out"), all.length ? `
-      <p class="note">Players are checked against the 1% value written in the sheet (14k, 120m, 1.8m and so on) for every contest that has both a score and a 1% value. A blank cell means the player wasn't listed for that contest; a 0 counts as below. ${haveFlags() ? "Contests marked Excused or Quit Faction in the sheet key are not counted against a player." : "The colour key (Excused, Quit Faction) isn't being read in this mode, so those players currently count as below."}</p>
+      ${q ? "" : `<p class="note"><b>${missed.length}</b> player${missed.length === 1 ? "" : "s"} below at least one 1% value written in the sheet (14k, 120m, 1.8m and so on). A blank cell means the player wasn't listed for that contest; a 0 counts as below. ${haveFlags() ? "Contests marked Excused or Quit Faction in the sheet key are not counted against a player." : "The colour key (Excused, Quit Faction) isn't being read in this mode, so those players currently count as below."} Only the flash feud combined total is checked, not flash feuds 1 to 4.</p>
       ${ro.length ? `<details class="note"><summary>${ro.length} contests have a 1% value but the sheet only records a rank, so they can't be checked. Show them.</summary>${ro.map(esc).join("<br>")}</details>` : ""}
-      <div class="grid">
-        <div class="box top-b"><h3>Top 5 hit rate</h3><ol>${ranked.slice(0,5).map(li).join("")}</ol></div>
-        <div class="box bot-b"><h3>Bottom 5 hit rate</h3><ol>${ranked.slice(-5).reverse().map(li).join("")}</ol></div>
-      </div>
-      <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th class="n">Avg position</th><th>Contests below 1% value</th></tr></thead><tbody>
-      ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td><td class="n">${rs[r.p] ? rs[r.p].avg.toFixed(1) : "—"}</td>
+      <div class="grid"><div class="box bot-b"><h3>Lowest hit rate (most at risk)</h3><ol>${worst.length ? worst.map(li).join("") : "<li><i>No one</i></li>"}</ol></div></div>`}
+      <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests checked</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th class="n">Avg position</th><th>Contests below 1% value</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td><td class="n">${ps[r.p] ? ps[r.p].avg.toFixed(1) : "—"}</td>
         <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}${r.ex ? `<div>${r.ex} excused or left (not counted)</div>` : ""}</td></tr>`).join("")
         : '<tr><td colspan="7" class="empty">No players match.</td></tr>'}
       </tbody></table></div>` : '<div class="empty">No contests have both a score and a 1% value for these filters.</div>');
@@ -772,7 +788,9 @@ function go(v){
   current = v;
   document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
   if (!M.length){ html($("#controls"), ""); return html($("#out"), '<div class="empty">No data to show yet.</div>'); }
-  views[v](); history.replaceState(null, "", "#" + v);
+  views[v]();
+  document.querySelectorAll("#controls input[type=search]").forEach(i => { i.setAttribute("list", "pl"); i.setAttribute("autocomplete", "off"); });
+  history.replaceState(null, "", "#" + v);
 }
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 $("#refresh").onclick = async () => { await load(); go(current); };
