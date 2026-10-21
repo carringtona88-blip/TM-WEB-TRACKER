@@ -8,9 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#eceff3;--panel:#fff;--ink:#151a24;--mute:#5b6676;--line:#d5dae2;--met:#17744a;--below:#c1273f;--accent:#23395d;--accent-ink:#fff;--soft:#f2f4f8;
+:root{--bg:#eceff3;--panel:#fff;--ink:#151a24;--mute:#5b6676;--line:#d5dae2;--met:#17744a;--below:#c1273f;--accent:#23395d;--accent-ink:#fff;--soft:#f2f4f8;--gold:#9a6f00;
 --head:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#0f131a;--panel:#181e28;--ink:#e9edf3;--mute:#98a3b3;--line:#2a3340;--met:#45c486;--below:#ff6b7f;--accent:#8fb0ec;--accent-ink:#0d1422;--soft:#1f2632}}
+@media (prefers-color-scheme:dark){:root{--bg:#0f131a;--panel:#181e28;--ink:#e9edf3;--mute:#98a3b3;--line:#2a3340;--met:#45c486;--below:#ff6b7f;--accent:#8fb0ec;--accent-ink:#0d1422;--soft:#1f2632;--gold:#e0b341}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body)}
 .top{background:var(--accent);color:var(--accent-ink);padding:18px 20px 0}
@@ -74,6 +74,23 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .sugg button{font:inherit;font-size:.9rem;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:3px 12px;cursor:pointer}
 .small{font-size:.82rem;color:var(--mute)}
 code{background:var(--soft);padding:1px 5px;border-radius:4px}
+.strip{position:relative;height:16px;margin-top:12px;border-radius:8px;background:linear-gradient(90deg,color-mix(in srgb,var(--below) 28%,transparent),color-mix(in srgb,var(--met) 28%,transparent))}
+.strip i{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--ink);border:2px solid var(--panel)}
+.cap{display:flex;justify-content:space-between;font-size:.72rem;color:var(--mute);margin-top:3px}
+.sec{font:700 1.2rem/1.2 var(--head);margin:18px 0 8px}
+.box .facts{margin:4px 0 4px}
+.box .fact span{max-width:150px}
+.pill.excused,.pill.quit{color:var(--accent)}
+.pill.top3{color:var(--gold)}
+.up{color:var(--met);font-weight:600}.down{color:var(--below);font-weight:600}
+.mbar{display:flex;align-items:center;gap:8px;margin:6px 0}
+.mbar b{width:38px;font:600 .95rem var(--head)}
+.mbar div{flex:1;height:14px;background:var(--soft);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.mbar div i{display:block;height:100%;background:var(--accent)}
+.mbar div i.hi{background:var(--met)}.mbar div i.lo{background:var(--below)}
+.mbar span{width:96px;font-size:.8rem;color:var(--mute);text-align:right}
+.review{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:12px 16px;margin-bottom:14px}
+.review p{margin:4px 0}
 </style>
 </head>
 <body>
@@ -85,6 +102,8 @@ code{background:var(--soft);padding:1px 5px;border-radius:4px}
   <nav role="tablist" id="nav">
     <button role="tab" data-v="event">Contest</button>
     <button role="tab" data-v="player">Player</button>
+    <button role="tab" data-v="perf">Performance</button>
+    <button role="tab" data-v="rank">Rankings</button>
     <button role="tab" data-v="watch">Watchlist</button>
   </nav>
 </div></div>
@@ -166,27 +185,38 @@ function kind(t){
   if (t.includes("loot")) return "Loot Contest";
   return "Faction Contest";
 }
-function buildMonth(name, rows){
+// Key colours from the sheet (only available when the Google script link is used)
+const FLAG = {f4cccc:"missed", c9daf8:"excused", f1c232:"top3", ffff00:"quit"};
+const flagOf = c => FLAG[String(c || "").replace("#", "").toLowerCase()] || "";
+function buildMonth(name, rows, bg){
   const [label, , theme] = name.split(/( - )/);
-  const players = [];
-  for (const r of rows.slice(6)){
-    const a = (r[0] || "").trim();
+  const pl = [];
+  for (let i = 6; i < rows.length; i++){
+    const a = ((rows[i] || [])[0] || "").trim();
     if (a.toUpperCase() === "KEY") break;
-    if (a) players.push(r);
+    if (a) pl.push(i);
   }
-  const events = [], head = rows[0] || [];
+  const events = [], head = rows[0] || [], pf = {};
+  if (bg) pl.forEach(i => { if (flagOf((bg[i] || [])[0]) === "quit") pf[rows[i][0].trim()] = "quit"; });
   for (let j = 1; j < head.length; j++){
-    let title = (head[j] || "").replace(/\s+/g, " ").trim();
+    const title = (head[j] || "").replace(/\s+/g, " ").trim();
     if (!title || /roster size/i.test(title)) continue;
-    const s = {};
-    players.forEach(r => { const v = num(r[j]); if (v != null) s[r[0].trim()] = v; });
+    const s = {}, f = {};
+    pl.forEach(i => {
+      const nm = rows[i][0].trim(), v = num(rows[i][j]);
+      if (v != null) s[nm] = v;
+      const fl = bg ? flagOf((bg[i] || [])[j]) : ""; if (fl) f[nm] = fl;
+    });
     const vals = Object.values(s);
     if (!vals.length) continue;
     const ty = kind(title);
     events.push({t: title, ty, m: (ty === "Rank" || ty === "Average" || (vals.length >= 3 && Math.max(...vals) <= 100)) ? "rank" : "score",
-      op: num((rows[5] || [])[j]), fr: rankNum((rows[3] || [])[j]), fs: num((rows[4] || [])[j]), s});
+      op: num((rows[5] || [])[j]), fr: rankNum((rows[3] || [])[j]), fs: num((rows[4] || [])[j]), s, f});
   }
-  return {label: label.trim(), theme: (theme || "").trim(), events};
+  const qc = {};
+  events.forEach(e => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "quit") qc[p] = (qc[p] || 0) + 1; }));
+  Object.keys(qc).forEach(p => { if (qc[p] >= 2) pf[p] = "quit"; });
+  return {label: label.trim(), theme: (theme || "").trim(), events, pf};
 }
 async function discoverTabs(base){
   const res = await fetch(base + "pubhtml", {cache: "no-store"});
@@ -210,7 +240,7 @@ async function loadLive(){
     try { data = await r.json(); }
     catch (e) { throw new Error("the Apps Script link didn't return data. Redeploy it with access set to Anyone"); }
     const k = data.findIndex(t => t.name.toLowerCase().startsWith(CONFIG.firstMonth.toLowerCase()));
-    return data.slice(k >= 0 ? k : 0).map(t => buildMonth(t.name, t.rows));
+    return data.slice(k >= 0 ? k : 0).map(t => buildMonth(t.name, t.rows, t.bg));
   }
   const base = `https://docs.google.com/spreadsheets/d/e/${CONFIG.publishKey}/`;
   let tabs = CONFIG.tabs.length ? CONFIG.tabs : await discoverTabs(base);
@@ -229,10 +259,14 @@ let M = [], allPlayers = [], allTypes = [], monthOpts = [], typeOpts = [], curre
 const CATS = {
   "All contests": null,
   "Kick offs": ["Kick Off"],
-  "Feuds (all feuds, flash feuds, totals)": ["Feud", "Flash Feud", "Flash Feud Total"],
-  "Faction contests (contests, loot, boss battles)": ["Faction Contest", "Loot Contest", "Boss Battle"],
-  "Ranks and averages": ["Rank", "Average"]
+  "Feuds": ["Feud", "Flash Feud", "Flash Feud Total"],
+  "Faction contests": ["Faction Contest"],
+  "Loot contests": ["Loot Contest"],
+  "Boss battles": ["Boss Battle"],
+  "Ranks": ["Rank", "Average"]
 };
+// only offer categories that actually have data
+const catKeys = () => Object.keys(CATS).filter(k => !CATS[k] || M.some(m => m.events.some(e => CATS[k].includes(e.ty))));
 function derive(){
   M.forEach(m => m.events.forEach(e => {
     const ent = Object.entries(e.s); e.n = ent.length; e.pos = {};
@@ -256,7 +290,9 @@ async function load(){
       M = window.DATA.months;
       $("#src").textContent = "Saved copy (August onwards)";
       b.hidden = false; b.className = "warn";
-      b.innerHTML = "Couldn't reach the live sheet (" + esc(err.message || err) + "), so this is the saved copy from <code>data.js</code>. See the settings at the top of <code>index.html</code> to fix the live link.";
+      b.innerHTML = CONFIG.scriptUrl
+        ? "Couldn't reach your Google script link (" + esc(err.message || err) + "). Check the link ends in <code>/exec</code> and that it was deployed with access set to <b>Anyone</b>. Showing the saved copy (August to October) for now."
+        : "No Google script link is set yet, so this is the saved copy built into the page (August to October). To make it update live, set up the Google script and paste its link into <code>scriptUrl</code> at the top of <code>index.html</code>.";
     } else {
       M = []; $("#src").textContent = "No data";
       b.hidden = false; b.className = "warn";
@@ -268,8 +304,18 @@ async function load(){
 
 /* ---------- Shared bits ---------- */
 const mon = i => M[i].label.split(" ")[0].slice(0, 3);
-const status = (e, v) => (e.m !== "score" || e.op == null || v == null) ? null : (v >= e.op ? "met" : "below");
-const pill = st => st ? `<span class="pill ${st}">${st === "met" ? "Met 1%" : "Below 1%"}</span>` : `<span class="pill none">No target</span>`;
+const EXEMPT = ["excused", "quit"];
+const haveFlags = () => M.some(m => m.events.some(e => e.f && Object.keys(e.f).length));
+const status = (e, v, p) => {
+  if (e.m !== "score" || e.op == null || v == null) return null;
+  if (v >= e.op) return "met";
+  const fl = p && e.f ? e.f[p] : "";
+  return EXEMPT.includes(fl) ? fl : "below";
+};
+const PILL = {met:"Met 1%", below:"Below 1%", excused:"Excused", quit:"Left faction"};
+const pill = st => st ? `<span class="pill ${st}">${PILL[st]}</span>` : `<span class="pill none">No target</span>`;
+const roster = p => { for (let i = M.length - 1; i >= 0; i--){ const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
+const rosterPill = p => roster(p) === "quit" ? ' <span class="pill quit">Left</span>' : "";
 const meter = (e, v) => (e.m === "score" && e.op && v != null)
   ? `<div class="meter" title="${Math.round(v/e.op*100)}% of 1% value"><i class="${status(e,v)}" style="width:${Math.min(v/e.op/2,1)*100}%"></i><u></u></div>` : "";
 const pctOf = (e, v) => (e.m === "score" && e.op && v != null) ? Math.round(v/e.op*100) + "%" : "";
@@ -316,7 +362,7 @@ function viewEvent(){
     const ev = M[mi] && M[mi].events[+$("#ev").value];
     if (!ev || $("#ev").value === "") return html($("#out"), '<div class="empty">No contests match.</div>');
     const isRank = ev.m === "rank";
-    const sorted = Object.entries(ev.s).map(([p,v]) => ({p, v, pos: ev.pos[p], st: status(ev, v)}))
+    const sorted = Object.entries(ev.s).map(([p,v]) => ({p, v, pos: ev.pos[p], st: status(ev, v, p)}))
       .sort((a,b) => isRank ? a.v - b.v : b.v - a.v);
     const cnt = {met:0, below:0}; sorted.forEach(x => { if (x.st) cnt[x.st]++; });
     const top = sorted.slice(0,5), bot = sorted.slice(-5).reverse();
@@ -341,7 +387,7 @@ function viewEvent(){
         <div class="box bot-b"><h3>Bottom 5</h3><ol>${bot.map(li).join("")}</ol></div>
       </div>
       <div class="wrap"><table><thead><tr><th class="n">Position</th><th>Player</th><th class="n">${isRank?"Rank":"Score"}</th><th>Progress to 1% value</th><th class="n">% of target</th><th>Status</th></tr></thead><tbody>
-      ${rows.length ? rows.map(x=>`<tr><td class="n">${x.pos}</td><td>${esc(x.p)}</td><td class="n">${fmt(x.v)}</td><td>${meter(ev,x.v)}</td><td class="n">${pctOf(ev,x.v)}</td><td>${pill(x.st)}</td></tr>`).join("")
+      ${rows.length ? rows.map(x=>`<tr><td class="n">${x.pos}</td><td>${esc(x.p)}${rosterPill(x.p)}${x.pos <= 3 || (ev.f || {})[x.p] === "top3" ? ' <span class="pill top3">Top 3</span>' : ""}</td><td class="n">${fmt(x.v)}</td><td>${meter(ev,x.v)}</td><td class="n">${pctOf(ev,x.v)}</td><td>${pill(x.st)}</td></tr>`).join("")
         : '<tr><td colspan="6" class="empty">No players match.</td></tr>'}
       </tbody></table></div>
       <p class="small">The bar fills to 2× the 1% value; the vertical line marks the target.</p>`);
@@ -349,12 +395,127 @@ function viewEvent(){
   draw();
 }
 
+/* ============ PERFORMANCE ============ */
+// Performance score: average position across contests, scaled 0-100 (100 = top of the field, 50 = middle).
+const PCT = (e, p) => e.n > 1 ? (1 - (e.pos[p] - 1) / (e.n - 1)) * 100 : 100;
+function perfStats(mSel, types){
+  const P = {};
+  M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
+    if (e.ty === "Rank" || e.ty === "Average" || (types && !types.includes(e.ty))) return;
+    Object.keys(e.s).forEach(p => {
+      const r = P[p] || (P[p] = {p, n:0, sum:0, low:0, top:0, met:0, below:0, mo:{}});
+      const x = PCT(e, p); r.n++; r.sum += x; if (x <= 25) r.low++; if (x >= 75) r.top++;
+      const st = status(e, e.s[p], p); if (st === "met") r.met++; else if (st === "below") r.below++;
+      const o = r.mo[mi] || (r.mo[mi] = {sum:0, n:0}); o.sum += x; o.n++;
+    });
+  }); });
+  return Object.values(P).map(r => {
+    const ms = Object.keys(r.mo).map(Number).sort((a, b) => a - b).map(mi => ({mi, avg: r.mo[mi].sum / r.mo[mi].n, n: r.mo[mi].n}));
+    let delta = null;
+    if (ms.length >= 2){ const prev = ms.slice(0, -1); delta = ms[ms.length-1].avg - prev.reduce((s, x) => s + x.avg, 0) / prev.length; }
+    return {...r, avg: r.sum / r.n, ms, delta, trend: delta == null ? "New" : delta >= 5 ? "Improving" : delta <= -5 ? "Declining" : "Steady"};
+  });
+}
+const trendTxt = r => r.delta == null ? "—" : r.trend === "Improving" ? `<span class="up">↑ +${Math.round(r.delta)}</span>` : r.trend === "Declining" ? `<span class="down">↓ ${Math.round(r.delta)}</span>` : "→ steady";
+const hitTxt = r => (r.met + r.below) ? Math.round(r.met / (r.met + r.below) * 100) + "% (" + r.met + "/" + (r.met + r.below) + ")" : "—";
+
+function viewPerf(){
+  const mSel = new Set(M.map((_, i) => i));
+  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
+    <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
+  $("#controls").append(multi("Months", monthOpts, mSel, draw));
+  $("#pq").oninput = draw; $("#cat").onchange = draw;
+  function draw(){
+    const all = perfStats(mSel, CATS[$("#cat").value]).sort((a, b) => b.avg - a.avg || b.n - a.n);
+    if (!all.length) return html($("#out"), '<div class="empty">No data for these filters.</div>');
+    const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
+    const grow = pool.filter(r => r.delta != null && r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 10);
+    const fall = pool.filter(r => r.delta != null && r.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 10);
+    const q = $("#pq").value.trim().toLowerCase();
+    const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.avg)} · ${trendTxt(r)}</i></li>`;
+    const liD = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${trendTxt(r)} (now ${Math.round(r.ms[r.ms.length-1].avg)})</i></li>`;
+    const none = '<li><i>None yet</i></li>';
+    const rows = all.map((r, i) => ({...r, i: i + 1})).filter(r => !q || r.p.toLowerCase().includes(q));
+    html($("#out"), `
+      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of 5 points or more counts as improving or declining. Top and bottom 20 only include players in at least ${Math.ceil(maxN/2)} contests.</p>
+      <div class="grid">
+        <div class="box top-b"><h3>Top 20 performers</h3><ol>${pool.slice(0, 20).map(li).join("")}</ol></div>
+        <div class="box bot-b"><h3>Bottom 20 performers</h3><ol>${pool.slice(-20).reverse().map(li).join("")}</ol></div>
+      </div>
+      <div class="grid">
+        <div class="box top-b"><h3>Growing (most improved)</h3><ol>${grow.length ? grow.map(liD).join("") : none}</ol></div>
+        <div class="box bot-b"><h3>Declining</h3><ol>${fall.length ? fall.map(liD).join("") : none}</ol></div>
+      </div>
+      <div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th>Month by month</th><th class="n">Bottom quarter</th><th class="n">1% hit rate</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
+        : '<tr><td colspan="8" class="empty">No players match.</td></tr>'}
+      </tbody></table></div>`);
+  }
+  draw();
+}
+
+function reviewPanel(me, rk, total, mine){
+  if (!me) return "";
+  const lab = r => mon(r.mi) + ": " + r.e.t;
+  const lvl = me.avg >= 75 ? "a top performer" : me.avg >= 55 ? "above average" : me.avg >= 40 ? "mid-table" : me.avg >= 25 ? "below average" : "near the bottom of the faction";
+  const d = me.delta == null ? 0 : Math.abs(Math.round(me.delta));
+  const best = [...mine].filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
+  const lines = [
+    `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, number ${rk} of ${total} players.`,
+    me.delta == null ? "Only one month of data so far, so there's no trend yet."
+      : me.trend === "Improving" ? `<span class="up">Improving:</span> up ${d} points on earlier months.`
+      : me.trend === "Declining" ? `<span class="down">Declining:</span> down ${d} points on earlier months.` : "Trend is steady compared with earlier months.",
+    me.n >= 3 && me.low / me.n >= 0.6 ? `<span class="down">Constantly near the bottom:</span> bottom quarter in ${me.low} of ${me.n} contests.`
+      : me.low ? `Bottom quarter in ${me.low} of ${me.n} contests.` : "Never in the bottom quarter of a contest.",
+    (me.met + me.below) ? `Met the 1% value in ${me.met} of ${me.met + me.below} contests (${Math.round(me.met / (me.met + me.below) * 100)}%).` : "",
+    best ? `Best result: ${esc(lab(best))} (position ${best.pos} of ${best.e.n}).` : ""
+  ].filter(Boolean);
+  return `<h3 class="sec">Performance review</h3>
+    <div class="review">${lines.map(l => `<p>${l}</p>`).join("")}</div>
+    <div class="box" style="margin-bottom:14px"><h3>Average position by month <span class="small">· 100 = top of the field</span></h3>
+      ${me.ms.map(x => `<div class="mbar"><b>${esc(mon(x.mi))}</b><div><i class="${x.avg >= 60 ? "hi" : x.avg <= 35 ? "lo" : ""}" style="width:${Math.max(2, x.avg)}%"></i></div><span>${Math.round(x.avg)} · ${x.n} contests</span></div>`).join("")}</div>`;
+}
+
 /* ============ PLAYER VIEW ============ */
+const statFact = (b, s, sub) => `<div class="fact"><b>${b}</b><span>${s}${sub ? "<br>" + esc(sub) : ""}</span></div>`;
+function playerStats(mine){
+  const core = mine.filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average");
+  if (!core.length) return "";
+  const lab = r => mon(r.mi) + ": " + r.e.t;
+  const GROUPS = [["Kick offs", ["Kick Off"]], ["Feuds", ["Feud", "Flash Feud", "Flash Feud Total"]], ["Faction contests", ["Faction Contest", "Loot Contest", "Boss Battle"]]];
+  const strip = (pts, cap) => `<div class="strip" aria-hidden="true">${pts.map(p => `<i style="left:${(p.x*100).toFixed(1)}%" title="${esc(p.t)}"></i>`).join("")}</div><div class="cap"><span>worse</span><span>${cap}</span><span>better</span></div>`;
+  const cards = GROUPS.map(([label, types]) => {
+    const rs = core.filter(r => types.includes(r.e.ty)); if (!rs.length) return "";
+    const sc = rs.filter(r => r.e.m === "score"), rk = rs.filter(r => r.e.m === "rank");
+    let facts = "", strips = "";
+    if (sc.length){
+      const hi = sc.reduce((a, r) => r.v > a.v ? r : a), lo = sc.reduce((a, r) => r.v < a.v ? r : a), avg = sc.reduce((s, r) => s + r.v, 0) / sc.length;
+      facts += statFact(fmt(hi.v), "Best score", lab(hi)) + statFact(fmt(lo.v), "Lowest score", lab(lo)) + statFact(fmt(avg), "Average score");
+      strips += strip(sc.map(r => ({x: hi.v ? r.v / hi.v : 0, t: lab(r) + " · " + fmt(r.v)})), "each dot = a score");
+    }
+    if (rk.length){
+      const b = rk.reduce((a, r) => r.v < a.v ? r : a), w = rk.reduce((a, r) => r.v > a.v ? r : a);
+      facts += statFact("Rank " + fmt(b.v), "Best rank", lab(b)) + statFact("Rank " + fmt(w.v), "Worst rank", lab(w));
+      strips += strip(rk.map(r => ({x: 1 - (Math.min(r.v, 100) - 1) / 99, t: lab(r) + " · rank " + fmt(r.v)})), "each dot = a rank");
+    }
+    return `<div class="box"><h3>${label} <span class="small">· ${rs.length} entered</span></h3><div class="facts">${facts}</div>${strips}</div>`;
+  }).join("");
+  const sorted = [...core].sort((a, b) => a.pos / a.e.n - b.pos / b.e.n);
+  const li = r => `<li><b>${esc(lab(r))}</b><i>${r.e.m === "rank" ? "Rank " + fmt(r.v) : fmt(r.v)} · ${r.pos} of ${r.e.n}</i></li>`;
+  return `<h3 class="sec">Player stats</h3>
+    <div class="grid">${cards}</div>
+    <div class="grid">
+      <div class="box top-b"><h3>Best 5 results</h3><ol>${sorted.slice(0, 5).map(li).join("")}</ol></div>
+      <div class="box bot-b"><h3>Lowest 5 results</h3><ol>${sorted.slice(-5).reverse().map(li).join("")}</ol></div>
+    </div>
+    <p class="note">Best and lowest 5 compare results by position in each contest, so a kick off and a feud can be ranked fairly. Dots on the bars: right is better, and hovering a dot shows the contest.</p>
+    <h3 class="sec">Contest history</h3>`;
+}
 function viewPlayer(){
   const mSel = new Set(M.map((_, i) => i)); let name = "";
   html($("#controls"), `
     <label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label><datalist id="pl">${allPlayers.map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
-    <label class="f">Contests<select id="cat">${Object.keys(CATS).map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
+    <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
     <label class="f">1% value<select id="th"><option value="all">All</option><option value="below">Below 1%</option><option value="met">Met / above 1%</option></select></label>
     <label class="f">Show<select id="sh"><option value="all">All, in order</option><option value="best">Best 5 scores</option><option value="low">Lowest 5 scores</option></select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
@@ -367,31 +528,23 @@ function viewPlayer(){
     if (!name){
       const m = q ? allPlayers.filter(p => p.toLowerCase().includes(q)).slice(0, 24) : [];
       return html($("#out"), q ? (m.length ? `<p class="note">Pick a player:</p><div class="sugg">${m.map(p=>`<button data-p="${esc(p)}">${esc(p)}</button>`).join("")}</div>` : '<div class="empty">No player with that name.</div>')
-        : '<div class="empty">Search for a player to see their kick off, feud and contest scores for every month.</div>');
+        : '<div class="empty">Search for a player to see their stats and their kick off, feud and contest scores for every month.</div>');
     }
     const types = CATS[$("#cat").value], th = $("#th").value, sh = $("#sh").value;
-    let rows = [];
-    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
-      if ((!types || types.includes(e.ty)) && e.s[name] != null) rows.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name])});
-    }); });
+    const mine = [];
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.s[name] != null) mine.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name], name)}); }); });
+    let rows = mine.filter(r => !types || types.includes(r.e.ty));
     if (th !== "all") rows = rows.filter(r => r.st === th);
-    const scored = rows.filter(r => r.e.m === "score");
-    const hi = scored.reduce((a, r) => !a || r.v > a.v ? r : a, null), lo = scored.reduce((a, r) => !a || r.v < a.v ? r : a, null);
-    const judged = rows.filter(r => r.st), met = judged.filter(r => r.st === "met").length;
-    const avgPos = rows.length ? Math.round(rows.reduce((s, r) => s + r.pos, 0) / rows.length) : null;
-    const bestPos = rows.length ? Math.min(...rows.map(r => r.pos)) : null;
+    const judged = rows.filter(r => r.st === "met" || r.st === "below"), met = judged.filter(r => r.st === "met").length;
     let shown = rows;
     if (sh !== "all") shown = [...rows].sort((a, b) => (a.pos / a.e.n) - (b.pos / b.e.n)).slice(sh === "best" ? 0 : -5);
     if (sh === "low") shown.reverse();
-    const lab = r => mon(r.mi) + ": " + r.e.t;
     html($("#out"), `
-      <h2>${esc(name)}</h2>
+      <h2>${esc(name)}${rosterPill(name)}</h2>
+      ${(() => { const PS = perfStats(mSel), me = PS.find(x => x.p === name); return reviewPanel(me, [...PS].sort((a, b) => b.avg - a.avg).findIndex(x => x.p === name) + 1, PS.length, mine); })()}
+      ${playerStats(mine)}
       <div class="facts">
         <div class="fact"><b>${rows.length}</b><span>Entries shown</span></div>
-        <div class="fact"><b>${bestPos ?? "—"}</b><span>Best position</span></div>
-        <div class="fact"><b>${avgPos ?? "—"}</b><span>Average position</span></div>
-        <div class="fact" title="${hi ? esc(lab(hi)) : ""}"><b>${hi ? fmt(hi.v) : "—"}</b><span>Highest score${hi ? " · " + esc(mon(hi.mi)) : ""}</span></div>
-        <div class="fact" title="${lo ? esc(lab(lo)) : ""}"><b>${lo ? fmt(lo.v) : "—"}</b><span>Lowest score${lo ? " · " + esc(mon(lo.mi)) : ""}</span></div>
         <div class="fact"><b style="color:var(--met)">${met}</b><span>Met 1%</span></div>
         <div class="fact"><b style="color:var(--below)">${judged.length - met}</b><span>Below 1%</span></div>
       </div>
@@ -399,6 +552,47 @@ function viewPlayer(){
       <div class="wrap"><table><thead><tr><th>Month</th><th>Contest</th><th>Type</th><th class="n">Score / rank</th><th class="n">Position</th><th class="n">1% value</th><th>Progress</th><th class="n">% of target</th><th>Status</th></tr></thead><tbody>
       ${shown.length ? shown.map(r=>`<tr><td>${esc(mon(r.mi))}</td><td>${esc(r.e.t)}</td><td>${esc(r.e.ty)}</td><td class="n">${r.e.m==="rank" ? "Rank " + fmt(r.v) : fmt(r.v)}</td><td class="n">${r.pos} of ${r.e.n}</td><td class="n">${r.e.m==="score"?short(r.e.op):""}</td><td>${meter(r.e,r.v)}</td><td class="n">${pctOf(r.e,r.v)}</td><td>${pill(r.st)}</td></tr>`).join("")
         : '<tr><td colspan="9" class="empty">No entries for these filters.</td></tr>'}
+      </tbody></table></div>`);
+  }
+  draw();
+}
+
+/* ============ RANKINGS VIEW ============ */
+// Uses every contest where the sheet records a rank (1 is best). "Average" columns are skipped to avoid counting twice.
+function rankStats(mSel, types){
+  const P = {};
+  M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
+    if (e.m !== "rank" || e.ty === "Average" || (types && !types.includes(e.ty))) return;
+    Object.entries(e.s).forEach(([p, v]) => {
+      const r = P[p] || (P[p] = {p, n:0, sum:0, best:Infinity, worst:0, list:[]});
+      r.n++; r.sum += v; r.best = Math.min(r.best, v); r.worst = Math.max(r.worst, v);
+      r.list.push(mon(mi) + ": " + e.t + " (rank " + fmt(v) + ")");
+    });
+  }); });
+  return Object.values(P).map(r => ({...r, avg: r.sum / r.n}));
+}
+function viewRank(){
+  const mSel = new Set(M.map((_, i) => i));
+  html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
+    <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
+  $("#controls").append(multi("Months", monthOpts, mSel, draw));
+  $("#pq").oninput = draw; $("#cat").onchange = draw;
+  function draw(){
+    const all = rankStats(mSel, CATS[$("#cat").value]).sort((a, b) => a.avg - b.avg || b.n - a.n);
+    if (!all.length) return html($("#out"), '<div class="empty">No rank data for these filters.</div>');
+    const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
+    const q = $("#pq").value.trim().toLowerCase();
+    const li = r => `<li><b>${esc(r.p)}</b><i>avg ${r.avg.toFixed(1)} · best ${r.best}</i></li>`;
+    html($("#out"), `
+      <p class="note">Rank 1 is best. This averages each player's rank across every contest where the sheet records a rank. The top and bottom 5 only include players who appear in at least half as many contests as the most active player (${Math.ceil(maxN/2)}+).</p>
+      <div class="grid">
+        <div class="box top-b"><h3>Top 5 average rank</h3><ol>${pool.slice(0,5).map(li).join("")}</ol></div>
+        <div class="box bot-b"><h3>Bottom 5 average rank</h3><ol>${pool.slice(-5).reverse().map(li).join("")}</ol></div>
+      </div>
+      <div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests ranked</th><th class="n">Avg rank</th><th class="n">Best</th><th class="n">Worst</th><th>Ranks by contest</th></tr></thead><tbody>
+      ${(() => { const rows = all.map((r, i) => ({...r, i: i + 1})).filter(r => !q || r.p.toLowerCase().includes(q));
+        return rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}</td><td class="n">${r.n}</td><td class="n">${r.avg.toFixed(1)}</td><td class="n">${r.best}</td><td class="n">${r.worst}</td><td class="small"><details><summary>Show</summary>${r.list.map(esc).join("<br>")}</details></td></tr>`).join("")
+          : '<tr><td colspan="7" class="empty">No players match.</td></tr>'; })()}
       </tbody></table></div>`);
   }
   draw();
@@ -416,33 +610,36 @@ function viewWatch(){
     M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => {
       if (!tSel.has(e.ty) || e.m !== "score" || !e.op) return;
       Object.entries(e.s).forEach(([p, v]) => {
-        const r = P[p] || (P[p] = {p, met:0, below:0, miss:[]});
-        if (v >= e.op) r.met++; else { r.below++; r.miss.push(mon(mi) + ": " + e.t + " (" + fmt(v) + " / " + short(e.op) + ")"); }
+        const r = P[p] || (P[p] = {p, met:0, below:0, ex:0, miss:[]});
+        if (v >= e.op) r.met++; else if (EXEMPT.includes((e.f || {})[p])) r.ex++; else { r.below++; r.miss.push(mon(mi) + ": " + e.t + " (" + fmt(v) + " / " + short(e.op) + ")"); }
       });
     }); });
     const all = Object.values(P).map(r => ({...r, n: r.met + r.below, pct: r.met / (r.met + r.below)}));
+    const rs = Object.fromEntries(rankStats(mSel, [...tSel]).map(r => [r.p, r]));
+    const ro = []; M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.m === "rank" && e.op && tSel.has(e.ty)) ro.push(mon(mi) + ": " + e.t + " (1% value " + short(e.op) + ")"); }); });
     const ranked = [...all].sort((a,b) => b.pct - a.pct || b.n - a.n);
     const q = $("#pq").value.trim().toLowerCase(), sf = $("#sf").value;
     const rows = [...all].sort((a,b) => b.below - a.below || a.pct - b.pct)
       .filter(r => (!q || r.p.toLowerCase().includes(q)) && (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0)));
     const li = r => `<li><b>${esc(r.p)}</b><i>${r.met}/${r.n} met · ${Math.round(r.pct*100)}%</i></li>`;
     html($("#out"), all.length ? `
-      <p class="note">Counts only contests that have both a score and a 1% value (rank-only contests are left out). A blank cell means the player wasn't listed for that contest; a 0 counts as below.</p>
+      <p class="note">Players are checked against the 1% value written in the sheet (14k, 120m, 1.8m and so on) for every contest that has both a score and a 1% value. A blank cell means the player wasn't listed for that contest; a 0 counts as below. ${haveFlags() ? "Contests marked Excused or Quit Faction in the sheet key are not counted against a player." : "The colour key (Excused, Quit Faction) isn't being read in this mode, so those players currently count as below."}</p>
+      ${ro.length ? `<details class="note"><summary>${ro.length} contests have a 1% value but the sheet only records a rank, so they can't be checked. Show them.</summary>${ro.map(esc).join("<br>")}</details>` : ""}
       <div class="grid">
         <div class="box top-b"><h3>Top 5 hit rate</h3><ol>${ranked.slice(0,5).map(li).join("")}</ol></div>
         <div class="box bot-b"><h3>Bottom 5 hit rate</h3><ol>${ranked.slice(-5).reverse().map(li).join("")}</ol></div>
       </div>
-      <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th>Contests below 1% value</th></tr></thead><tbody>
-      ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td>
-        <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}</td></tr>`).join("")
-        : '<tr><td colspan="6" class="empty">No players match.</td></tr>'}
+      <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th class="n">Avg rank</th><th>Contests below 1% value</th></tr></thead><tbody>
+      ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td><td class="n">${rs[r.p] ? rs[r.p].avg.toFixed(1) : "—"}</td>
+        <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}${r.ex ? `<div>${r.ex} excused or left (not counted)</div>` : ""}</td></tr>`).join("")
+        : '<tr><td colspan="7" class="empty">No players match.</td></tr>'}
       </tbody></table></div>` : '<div class="empty">No contests have both a score and a 1% value for these filters.</div>');
   }
   draw();
 }
 
 /* ============ TABS & START ============ */
-const views = {event: viewEvent, player: viewPlayer, watch: viewWatch};
+const views = {event: viewEvent, player: viewPlayer, perf: viewPerf, rank: viewRank, watch: viewWatch};
 function go(v){
   current = v;
   document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
