@@ -270,7 +270,7 @@ function kind(t){
 // Key colours from the sheet (only available when the Google script link is used)
 // Codes typed in the sheet: (EX) excused, (QF) quit faction, (JO)/(J0)/(J) joined. Colours are only a fallback.
 const TOK = /\(\s*(EX|QF|J[O0]?)\s*\)/gi;
-const ROLE = /\s*\((LD|EF|OF|CO)\)\s*$/i;   // management role written after a name, e.g. "A Bigs (OF)"
+const ROLE = /\s*\((LD|EF|OF|CO)\)\s*/i;   // management role written after a name, e.g. "A Bigs (OF)"
 function cellParse(raw){
   let flag = "";
   const rest = String(raw == null ? "" : raw).replace(TOK, (m, c) => { c = c.toUpperCase(); flag = c === "EX" ? "excused" : c === "QF" ? "quit" : "new"; return ""; }).trim();
@@ -287,13 +287,13 @@ function hiddenFor(label){
 function buildMonth(name, rows, bg, hc, hr){
   const [label, , theme] = name.split(/( - )/);
   hc = new Set(Array.isArray(hc) ? hc : hiddenFor(label)); hr = new Set(hr || []);
-  const pl = [], roles = {}, names = [];
+  const pl = [], roles = {}, names = [], raws = {};
   for (let i = 6; i < rows.length; i++){
     const raw = ((rows[i] || [])[0] || "").trim();
     if (/^(key|legend)$/i.test(raw)) break;
     if (!raw || hr.has(i)) continue;
     const m = raw.match(ROLE), nm = raw.replace(ROLE, "").trim();
-    pl.push({i, nm}); names.push(nm); if (m) roles[nm] = m[1].toUpperCase();
+    pl.push({i, nm}); names.push(nm); raws[nm] = raw; if (m) roles[nm] = m[1].toUpperCase();
   }
   // "Input Progress" row: the month only counts once it says Completed
   const prog = (rows[2] || []).join(" ");
@@ -318,7 +318,7 @@ function buildMonth(name, rows, bg, hc, hr){
   const qc = {};
   events.forEach(e => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "quit") qc[p] = (qc[p] || 0) + 1; }));
   Object.keys(qc).forEach(p => { pf[p] = "quit"; });   // a single (QF) in the sheet means they quit
-  return {label: label.trim(), theme: (theme || "").trim(), events, pf, roles, players: names, done};
+  return {label: label.trim(), theme: (theme || "").trim(), events, pf, roles, players: names, raws, done};
 }
 async function discoverTabs(base){
   const res = await fetch(base + "pubhtml", {cache: "no-store"});
@@ -382,7 +382,7 @@ function derive(){
   M.forEach(m => [...(m.players || []), ...m.events.flatMap(e => Object.keys(e.s))].forEach(n => { canon[key(n)] = n.replace(/\s+/g, " ").trim(); }));
   const cn = n => canon[key(n)] || n;
   const remap = o => { const out = {}; Object.entries(o || {}).forEach(([k, v]) => { out[cn(k)] = v; }); return out; };
-  M.forEach(m => { m.players = [...new Set((m.players || []).map(cn))]; m.roles = remap(m.roles); m.pf = remap(m.pf); m.events.forEach(e => { e.s = remap(e.s); e.f = remap(e.f); }); });
+  M.forEach(m => { m.players = [...new Set((m.players || []).map(cn))]; m.roles = remap(m.roles); m.pf = remap(m.pf); m.raws = remap(m.raws); m.events.forEach(e => { e.s = remap(e.s); e.f = remap(e.f); }); });
   // Zeros that must not count: players who quit (QF), players who joined (J) and excused results.
   const firstQuit = {};
   M.forEach((m, mi) => { if (!isDone(mi)) return; m.events.forEach((e, ei) => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "quit" && !firstQuit[p]) firstQuit[p] = [mi, ei]; })); Object.keys(m.pf).forEach(p => { if (!firstQuit[p]) firstQuit[p] = [mi, 0]; }); });
@@ -466,14 +466,14 @@ function checks(e){
 }
 const PILL = {met:"Met 1%", below:"Below 1%", excused:"Excused", quit:"Left faction"};
 const pill = st => st ? `<span class="pill ${st}">${PILL[st]}</span>` : `<span class="pill none">No target</span>`;
-const roster = p => { for (let i = M.length - 1; i >= 0; i--){ if (!isDone(i)) continue; const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
+const roster = p => { for (let i = M.length - 1; i >= 0; i--){ const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
 // A result that met its 1% value is never "low": that is the standard score a player can reach. Only misses (or contests with no 1% value) can be low.
 const lowOk = r => r.st == null || r.st === "below";
 const flagBottom = r => r.n >= CONFIG.consistentBottomMin && r.low / r.n * 100 >= CONFIG.consistentBottomShare;
 const ROLE_NAME = {LD: "Leader", EF: "Enforcer", OF: "Officer", CO: "Coach"};
 const isMgmt = p => !!MG[p];
 const curRole = p => { const x = MG[p]; return x ? x[x.length - 1].code : ""; };
-const rosterPill = p => (roster(p) === "quit" ? ' <span class="pill quit">Left</span>' : "") + (curRole(p) ? ` <span class="pill role">${ROLE_NAME[curRole(p)]}</span>` : isMgmt(p) ? ' <span class="pill role">Ex-mgmt</span>' : "");
+const rosterPill = p => roster(p) === "quit" ? ' <span class="pill quit">Left</span>' : (curRole(p) ? ` <span class="pill role">${ROLE_NAME[curRole(p)]}</span>` : isMgmt(p) ? ' <span class="pill role">Ex-mgmt</span>' : "");
 function roleHistory(p){
   const out = [];
   (MG[p] || []).forEach(x => { const lbl = x.code ? ROLE_NAME[x.code] : "no role", l = out[out.length - 1]; if (l && l.lbl === lbl) l.end = x.mi; else out.push({lbl, start: x.mi, end: x.mi}); });
@@ -890,23 +890,27 @@ function viewRank(){
 function viewMgmt(){
   const mSel = doneSet();
   html($("#controls"), `<label class="f">Search member<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
-    <label class="f">Role now<select id="rl"><option value="all">All management</option><option value="LD">Leaders</option><option value="EF">Enforcers</option><option value="OF">Officers</option><option value="CO">Coaches</option><option value="none">No longer in a role</option></select></label>`);
+    <label class="f">Role now<select id="rl"><option value="all">All management</option><option value="LD">Leaders</option><option value="EF">Enforcers</option><option value="OF">Officers</option><option value="CO">Coaches</option><option value="none">No longer in a role</option><option value="left">Left the faction</option></select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#pq").oninput = draw; $("#rl").onchange = draw;
   function draw(){
     const ps = perfStats(mSel, null).sort((a, b) => b.avg - a.avg).map((r, i) => ({...r, i: i + 1}));
-    const mg = ps.filter(r => isMgmt(r.p)), rest = ps.filter(r => !isMgmt(r.p));
+    const mgAll = ps.filter(r => isMgmt(r.p)), mg = mgAll.filter(r => roster(r.p) !== "quit"), rest = ps.filter(r => !isMgmt(r.p));
     if (!mg.length) return html($("#out"), '<div class="empty">No management members found. A role is read from the code after a name in the sheet, like (LD), (EF), (OF) or (CO).</div>');
     const mean = a => a.length ? a.reduce((s, x) => s + x.avg, 0) / a.length : null;
     const hit = a => { const m = a.reduce((s, r) => s + r.met, 0), b = a.reduce((s, r) => s + r.below, 0); return m + b ? Math.round(m / (m + b) * 100) : null; };
     const q = $("#pq").value.trim().toLowerCase(), rl = $("#rl").value;
-    const rows = mg.filter(r => q ? r.p.toLowerCase().includes(q) : (rl === "all" || (rl === "none" ? !curRole(r.p) : curRole(r.p) === rl)));
+    const left = r => roster(r.p) === "quit";
+    const rows = mgAll.filter(r => q ? r.p.toLowerCase().includes(q) : rl === "left" ? left(r) : !left(r) && (rl === "all" || (rl === "none" ? !curRole(r.p) : curRole(r.p) === rl)));
     const table = `<div class="wrap"><table><thead><tr><th>Member</th><th>Role history</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th class="n">Earlier → latest</th><th>Month by month</th><th class="n">In bottom 25%</th><th class="n">1% hit rate</th></tr></thead><tbody>
       ${rows.length ? rows.map(r => `<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="small">${esc(roleHistory(r.p))}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="n">${r.delta == null ? "—" : Math.round(r.earlier) + " → " + Math.round(r.latest.avg)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n} (${Math.round(r.low / r.n * 100)}%)${flagBottom(r) ? ' <span class="pill below">Flag</span>' : ""}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
         : '<tr><td colspan="9" class="empty">No members match.</td></tr>'}
       </tbody></table></div>`;
     if (q){
-      const exact = mg.find(r => r.p.toLowerCase() === q);
+      const exact = mgAll.find(r => r.p.toLowerCase() === q);
+      const alt = !exact && allPlayers.find(p => p.toLowerCase() === q);
+      const seen = alt ? M.map((m, mi) => (m.raws || {})[alt] ? mon(mi) + ': "' + m.raws[alt] + '"' : "").filter(Boolean).join(" · ") : "";
+      if (alt) return html($("#out"), `<div class="note"><b>${esc(alt)}</b> isn't management. No month's name cell has a role code (LD), (EF), (OF) or (CO) after the name. This is how the name reads in the sheet: ${esc(seen || "not found")}</div>` + table);
       return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2><p class="small">${esc(roleHistory(exact.p))}</p>` + reviewPanel(exact, exact.i, ps.length, playerRows(exact.p, mSel)) : "") + table);
     }
     const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
