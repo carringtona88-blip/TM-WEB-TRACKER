@@ -13,7 +13,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0f131a;--panel:#181e28;--ink:#e9edf3;--mute:#98a3b3;--line:#2a3340;--met:#45c486;--below:#ff6b7f;--accent:#8fb0ec;--accent-ink:#0d1422;--soft:#1f2632;--gold:#e0b341}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body)}
-.top{background:var(--accent);color:var(--accent-ink);padding:18px 20px 0}
+.top{background:var(--top,var(--accent));color:var(--top-ink,var(--accent-ink));padding:18px 20px 0}
 .top-in,main{max-width:1100px;margin:0 auto}
 .row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 h1{font:700 2rem/1 var(--head);margin:0 0 2px;letter-spacing:.01em}
@@ -114,13 +114,15 @@ code{background:var(--soft);padding:1px 5px;border-radius:4px}
 details.box>summary{cursor:pointer}
 @media (max-width:640px){.health{flex-direction:column}}
 .pill.role{color:var(--accent)}
+.top{border-bottom:1px solid var(--line)}
+.by{margin:0 0 4px;font-size:.85rem;opacity:.8;letter-spacing:.02em}
 .brand{display:flex;align-items:center;gap:12px}#logo{height:52px;width:auto;border-radius:8px}
 </style>
 </head>
 <body>
 <div class="top"><div class="top-in">
   <div class="row">
-    <div class="brand"><img id="logo" alt="" hidden><div><h1 id="ttl">Toxic Mafia Scores</h1><p class="sub" id="src">Loading…</p></div></div>
+    <div class="brand"><img id="logo" alt="" hidden><div><h1 id="ttl">Toxic Mafia Scores</h1><p class="by" id="by">Website run by A.Bigs</p><p class="sub" id="src">Loading…</p></div></div>
     <button id="refresh" type="button">Refresh data</button>
   </div>
   <nav role="tablist" id="nav">
@@ -172,6 +174,9 @@ const CONFIG = {
   logoUrl: "",          // e.g. "logo.png"  - small picture shown beside the title
   headerImage: "",      // e.g. "banner.jpg" - picture behind the title bar
   title: "Toxic Mafia Scores",
+  runBy: "Website run by A.Bigs",   // the line under the title. Set to "" to hide it.
+  // "black" = black background with light text. "auto" = follows the phone/computer light or dark setting.
+  theme: "black",
   // Colours. Leave {} for the defaults, or set any of these. They apply in light and dark mode:
   // accent (title bar and buttons), accentInk (text on the title bar), bg (page), panel (cards), met (green), below (red), gold
   // Example: colors: {accent: "#7a1020", accentInk: "#ffffff", met: "#1b8a4f"}
@@ -200,8 +205,13 @@ const CONFIG = {
 const $ = s => document.querySelector(s);
 (function look(){
   const r = document.documentElement.style;
+  if (CONFIG.theme === "black"){
+    Object.entries({bg:"#000000", panel:"#0e0e0e", ink:"#ececec", mute:"#9a9fa8", line:"#262626", soft:"#171717", met:"#45c486", below:"#ff6b7f", accent:"#8fb0ec", "accent-ink":"#0d1422", gold:"#e0b341", top:"#000000", "top-ink":"#ececec"}).forEach(([k, v]) => r.setProperty("--" + k, v));
+    r.colorScheme = "dark";
+  }
   Object.entries(CONFIG.colors || {}).forEach(([k, v]) => r.setProperty("--" + k.replace(/[A-Z]/g, c => "-" + c.toLowerCase()), v));
   if (CONFIG.title){ $("#ttl").textContent = CONFIG.title; document.title = CONFIG.title; }
+  $("#by").textContent = CONFIG.runBy || ""; $("#by").hidden = !CONFIG.runBy;
   if (CONFIG.logoUrl){ const i = $("#logo"); i.src = CONFIG.logoUrl; i.hidden = false; }
   if (CONFIG.headerImage){ const t = document.querySelector(".top"); t.style.backgroundImage = "linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,.5)), url('" + CONFIG.headerImage.replace(/'/g, "") + "')"; t.style.backgroundSize = "cover"; t.style.backgroundPosition = "center"; t.style.color = "#fff"; }
 })();
@@ -521,7 +531,7 @@ function facStrength(evs, mi){
 
 /* ============ CONTEST VIEW ============ */
 function viewEvent(){
-  let mi = M.length - 1;
+  let mi = -1;   // always opens on All months
   html($("#controls"), `
     <label class="f">Month<select id="mo"><option value="-1">All months</option>${M.map((m,i)=>`<option value="${i}">${esc(m.label)}${isDone(i) ? "" : " (in progress)"}</option>`).join("")}</select></label>
     <label class="f">Contest type<select id="ty"><option value="">All types</option>${allTypes.map(t=>`<option>${esc(t)}</option>`).join("")}</select></label>
@@ -533,7 +543,7 @@ function viewEvent(){
     const ty = $("#ty").value;
     $("#ev").innerHTML = '<option value="all">All contests (overview)</option>' + (mi < 0 ? [] : M[mi].events).map((e,i)=>({e,i})).filter(x => !ty || x.e.ty === ty).map(x=>`<option value="${x.i}">${esc(x.e.t)}</option>`).join("");
   };
-  fillEv();
+  fillEv(); $("#ev").value = "all";
   $("#mo").onchange = e => { mi = +e.target.value; fillEv(); draw(); };
   $("#ty").onchange = () => { fillEv(); draw(); };
   $("#ev").onchange = draw; $("#sf").onchange = draw; $("#pq").oninput = draw;
@@ -1028,12 +1038,21 @@ function viewWatch(){
     const active = r => isCurrent(r.p);
     const missed = all.filter(r => r.below > 0 && active(r));
     const worst = [...missed].sort((a, b) => a.pct - b.pct || b.below - a.below).slice(0, 10);
+    const pfs = perfStats(mSel, [...tSel]).filter(r => isCurrent(r.p) && flagBottom(r));
+    const stuck = pfs.filter(r => r.delta != null && r.delta < CONFIG.trendPoints).sort((a, b) => b.low / b.n - a.low / a.n || a.delta - b.delta);
+    const noTrend = pfs.filter(r => r.delta == null).length;
+    const li3 = r => `<li><b>${esc(r.p)}</b><i>${r.low} of ${r.n} in bottom 25% · ${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
+    const top3 = worst.slice(0, 3);
+    const chart3 = `<div class="box bot-b" style="margin-bottom:14px"><h3>Top 3 most at risk <span class="small">· lowest 1% hit rate among current players</span></h3>${top3.length ? top3.map(r => `<div class="mbar"><b style="width:140px;font:600 .95rem var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.p)}">${esc(r.p)}</b><div><i class="lo" style="width:${Math.max(2, Math.round(r.pct * 100))}%"></i></div><span style="width:120px">${Math.round(r.pct * 100)}% · ${r.below} missed</span></div>`).join("") : "<p class=\"small\">No one is below a 1% value.</p>"}</div>`;
+    const stuckBox = `<div class="box bot-b" style="margin-bottom:14px"><h3>Constantly in the bottom 25% with no growth <span class="small">· bottom quarter in ${CONFIG.consistentBottomShare}% or more of contests and improving by less than ${CONFIG.trendPoints} points</span></h3><ol>${stuck.length ? stuck.map(li3).join("") : "<li><i>No one</i></li>"}</ol>${noTrend ? `<p class="small">${noTrend} more current player${noTrend === 1 ? " is" : "s are"} consistently in the bottom 25% but ${noTrend === 1 ? "doesn't" : "don't"} have enough finished months to judge growth yet.</p>` : ""}</div>`;
     const rows = [...all].sort((a, b) => a.pct - b.pct || b.below - a.below)
       .filter(r => active(r) && (q ? r.p.toLowerCase().includes(q) : (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0))));
     const li = r => `<li><b>${esc(r.p)}</b><i>${r.met}/${r.n} met · ${Math.round(r.pct*100)}%</i></li>`;
     html($("#out"), all.length ? `
       ${q ? "" : `<p class="note"><b>${missed.length}</b> player${missed.length === 1 ? "" : "s"} below at least one 1% value written in the sheet (14k, 120m, 1.8m and so on).</p>
-      <div class="grid"><div class="box bot-b"><h3>Lowest hit rate (most at risk)</h3><ol>${worst.length ? worst.map(li).join("") : "<li><i>No one</i></li>"}</ol></div></div>`}
+      ${chart3}
+      ${stuckBox}
+      <div class="grid"><div class="box bot-b"><h3>Lowest hit rates (up to 10)</h3><ol>${worst.length ? worst.map(li).join("") : "<li><i>No one</i></li>"}</ol></div></div>`}
       <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests checked</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th class="n">Avg position</th><th>Contests below 1% value</th></tr></thead><tbody>
       ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td><td class="n">${ps[r.p] ? ps[r.p].avg.toFixed(1) : "—"}</td>
         <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}${r.ex ? `<div>${r.ex} excused or left (not counted)</div>` : ""}</td></tr>`).join("")
