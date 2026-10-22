@@ -329,6 +329,9 @@ async function loadLive(){
 }
 
 /* ---------- App data ---------- */
+const isDone = mi => M[mi] && M[mi].done !== false;
+const doneSet = () => new Set(M.map((_, i) => i).filter(isDone));
+const ipNote = mi => isDone(mi) ? "" : '<p class="note" style="border-left:4px solid var(--gold);padding-left:10px"><b>In progress.</b> This month is for viewing and checking only. It is not counted in player profiles, rankings, the faction trend, the watchlist or management until the sheet\'s Input Progress cell says Completed.</p>';
 let MG = {}, M = [], allPlayers = [], allTypes = [], monthOpts = [], typeOpts = [], current = "event";
 const CATS = {
   "All contests": null,
@@ -352,7 +355,7 @@ function derive(){
   M.forEach(m => { m.players = [...new Set((m.players || []).map(cn))]; m.roles = remap(m.roles); m.pf = remap(m.pf); m.events.forEach(e => { e.s = remap(e.s); e.f = remap(e.f); }); });
   // Zeros that must not count: players who quit (QF), players who joined (J) and excused results.
   const firstQuit = {};
-  M.forEach((m, mi) => { m.events.forEach((e, ei) => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "quit" && !firstQuit[p]) firstQuit[p] = [mi, ei]; })); Object.keys(m.pf).forEach(p => { if (!firstQuit[p]) firstQuit[p] = [mi, 0]; }); });
+  M.forEach((m, mi) => { if (!isDone(mi)) return; m.events.forEach((e, ei) => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "quit" && !firstQuit[p]) firstQuit[p] = [mi, ei]; })); Object.keys(m.pf).forEach(p => { if (!firstQuit[p]) firstQuit[p] = [mi, 0]; }); });
   M.forEach((m, mi) => {
     const joined = new Set(); m.events.forEach(e => Object.entries(e.f).forEach(([p, fl]) => { if (fl === "new") joined.add(p); }));
     m.events.forEach((e, ei) => Object.keys(e.s).forEach(p => {
@@ -363,7 +366,7 @@ function derive(){
   });
   // Management: anyone with a role code in any month is management, whatever role (or no role) they have in other months.
   MG = {};
-  M.forEach((m, mi) => (m.players || []).forEach(p => { (MG[p] || (MG[p] = [])).push({mi, code: (m.roles || {})[p] || ""}); }));
+  M.forEach((m, mi) => isDone(mi) && (m.players || []).forEach(p => { (MG[p] || (MG[p] = [])).push({mi, code: (m.roles || {})[p] || ""}); }));
   Object.keys(MG).forEach(p => { if (!MG[p].some(x => x.code)) delete MG[p]; });
   M.forEach(m => m.events.forEach(e => {
     const ent = Object.entries(e.s); e.n = ent.length; e.pos = {};
@@ -372,7 +375,7 @@ function derive(){
   }));
   allPlayers = [...new Set(M.flatMap(m => m.events.flatMap(e => Object.keys(e.s))))].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}));
   allTypes = [...new Set(M.flatMap(m => m.events.map(e => e.ty)))];
-  monthOpts = M.map((m, i) => ({v: i, l: m.label}));
+  monthOpts = M.map((m, i) => ({v: i, l: m.label})).filter(o => isDone(o.v));
   typeOpts = allTypes.map(t => ({v: t, l: t}));
   $("#pl").innerHTML = allPlayers.map(p => `<option value="${esc(p)}">`).join("");
 }
@@ -398,9 +401,8 @@ async function load(){
     }
   }
   const skipped = M.filter(m => m.done === false).map(m => m.label);
-  M = M.filter(m => m.done !== false);
   if (skipped.length){
-    const note = esc(skipped.join(", ")) + (skipped.length > 1 ? " are" : " is") + " still in progress, so " + (skipped.length > 1 ? "they aren't" : "it isn't") + " included yet. " + (skipped.length > 1 ? "They'll" : "It'll") + " appear once the sheet's Input Progress row says Completed.";
+    const note = esc(skipped.join(", ")) + (skipped.length > 1 ? " are" : " is") + " still in progress. " + (skipped.length > 1 ? "They're" : "It's") + " visible in the Contest tab for checking, but " + (skipped.length > 1 ? "aren't" : "isn't") + " counted in profiles, rankings, trends or the watchlist until the sheet's Input Progress row says Completed.";
     if (b.hidden){ b.hidden = false; b.className = ""; b.innerHTML = note; } else b.innerHTML += "<br>" + note;
   }
   derive();
@@ -429,7 +431,7 @@ function checks(e){
 }
 const PILL = {met:"Met 1%", below:"Below 1%", excused:"Excused", quit:"Left faction"};
 const pill = st => st ? `<span class="pill ${st}">${PILL[st]}</span>` : `<span class="pill none">No target</span>`;
-const roster = p => { for (let i = M.length - 1; i >= 0; i--){ const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
+const roster = p => { for (let i = M.length - 1; i >= 0; i--){ if (!isDone(i)) continue; const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
 // A result that met its 1% value is never "low": that is the standard score a player can reach. Only misses (or contests with no 1% value) can be low.
 const lowOk = r => r.st == null || r.st === "below";
 const flagBottom = r => r.n >= CONFIG.consistentBottomMin && r.low / r.n * 100 >= CONFIG.consistentBottomShare;
@@ -469,7 +471,7 @@ document.addEventListener("click", e => document.querySelectorAll(".dd[open]").f
 function viewEvent(){
   let mi = M.length - 1;
   html($("#controls"), `
-    <label class="f">Month<select id="mo">${M.map((m,i)=>`<option value="${i}">${esc(m.label)}</option>`).join("")}</select></label>
+    <label class="f">Month<select id="mo">${M.map((m,i)=>`<option value="${i}">${esc(m.label)}${isDone(i) ? "" : " (in progress)"}</option>`).join("")}</select></label>
     <label class="f">Contest type<select id="ty"><option value="">All types</option>${allTypes.map(t=>`<option>${esc(t)}</option>`).join("")}</select></label>
     <label class="f">Contest<select id="ev"></select></label>
     <label class="f">Show<select id="sf"><option value="all">All players</option><option value="below">Below 1% value</option><option value="met">Met / above 1% value</option><option value="top5">Top 5</option><option value="top10">Top 10</option><option value="top20">Top 20</option><option value="bot5">Bottom 5</option><option value="bot10">Bottom 10</option><option value="bot20">Bottom 20</option></select></label>
@@ -498,12 +500,12 @@ function viewEvent(){
     else if (sf === "below") rows = ps.filter(r => r.below > 0);
     else if (sf === "met") rows = ps.filter(r => r.below === 0 && r.met > 0);
     if (q) rows = rows.filter(r => r.p.toLowerCase().includes(q));
-    if (q) return html($("#out"), `<h2>${esc(M[mi].label)}: players</h2><div class="wrap"><table><thead><tr><th>Player</th><th class="n">Score</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th></tr></thead><tbody>
+    if (q) return html($("#out"), `${ipNote(mi)}<h2>${esc(M[mi].label)}: players</h2><div class="wrap"><table><thead><tr><th>Player</th><th class="n">Score</th><th class="n">Contests</th><th class="n">Met</th><th class="n">Below</th></tr></thead><tbody>
       ${rows.length ? rows.map(r => `<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${Math.round(r.avg)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td></tr>`).join("") : '<tr><td colspan="5" class="empty">No players match.</td></tr>'}
       </tbody></table></div>`);
     const tally = e => { let met = 0, below = 0; checks(e).forEach(x => { if (x.st === "met") met++; else if (x.st === "below") below++; }); return {met, below}; };
     html($("#out"), `
-      <h2>${esc(M[mi].label)}: all contests</h2>
+      ${ipNote(mi)}<h2>${esc(M[mi].label)}: all contests</h2>
       <p class="note">${evs.length} contests. Tap a contest to open it. Player scores are each player's average position across these contests (100 = top of the field).</p>
       <div class="wrap"><table><thead><tr><th>Contest</th><th>Type</th><th class="n">Faction position</th><th class="n">Faction score</th><th class="n">1% value</th><th class="n">Players</th><th class="n">Met / Below</th></tr></thead><tbody>
       ${evs.map(e => { const t = tally(e); return `<tr data-ei="${M[mi].events.indexOf(e)}" style="cursor:pointer"><td>${esc(e.t)}</td><td>${esc(e.ty)}</td><td class="n">${ord(e.fr)}</td><td class="n">${fmt(e.fs)}</td><td class="n">${e.op ? short(e.op) : "—"}</td><td class="n">${e.n}</td><td class="n">${e.op && e.m === "score" ? t.met + " / " + t.below : "—"}</td></tr>`; }).join("")}
@@ -534,7 +536,7 @@ function viewEvent(){
     if (q) rows = rows.filter(x => x.p.toLowerCase().includes(q));
     const li = x => `<li><b>${esc(x.p)}</b><i>${isRank ? "Rank " + fmt(x.v) : fmt(x.v)}</i></li>`;
     html($("#out"), `
-      <h2>${esc(ev.t)}</h2>
+      ${ipNote(mi)}<h2>${esc(ev.t)}</h2>
       <div class="facts">
         <div class="fact big"><b>${ord(ev.fr)}</b><span>Faction position</span></div>
         <div class="fact big"><b>${fmt(ev.fs)}</b><span>Faction score</span></div>
@@ -601,7 +603,7 @@ function growthExplainer(all){
 }
 
 function viewPerf(){
-  const mSel = new Set(M.map((_, i) => i));
+  const mSel = doneSet();
   html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
@@ -703,7 +705,7 @@ function playerStats(mine, N = 5){
     <h3 class="sec">Contest history</h3>`;
 }
 function viewPlayer(){
-  const mSel = new Set(M.map((_, i) => i)); let name = "";
+  const mSel = doneSet(); let name = "";
   html($("#controls"), `
     <label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
@@ -765,7 +767,7 @@ function posStats(mSel, types){
   return Object.values(P).map(r => ({...r, avg: r.sum / r.n}));
 }
 function viewRank(){
-  const mSel = new Set(M.map((_, i) => i));
+  const mSel = doneSet();
   html($("#controls"), `<label class="f">Search player<input type="search" id="pq" placeholder="Type a name"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
     <label class="f">Show<select id="sf"><option value="all">All players</option><option value="top10">Top 10</option><option value="top20">Top 20</option><option value="bot10">Bottom 10</option><option value="bot20">Bottom 20</option></select></label>`);
@@ -807,7 +809,7 @@ function viewRank(){
 
 /* ============ MANAGEMENT ============ */
 function viewMgmt(){
-  const mSel = new Set(M.map((_, i) => i));
+  const mSel = doneSet();
   html($("#controls"), `<label class="f">Search member<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Role now<select id="rl"><option value="all">All management</option><option value="LD">Leaders</option><option value="EF">Enforcers</option><option value="OF">Officers</option><option value="CO">Coaches</option><option value="none">No longer in a role</option></select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
@@ -876,7 +878,7 @@ function factionChart(pts){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Faction position by contest">${bands}${g}${line}${dots}</svg>`;
 }
 function viewFaction(){
-  const mSel = new Set(M.map((_, i) => i));
+  const mSel = doneSet();
   html($("#controls"), `<label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#cat").onchange = draw;
@@ -946,7 +948,7 @@ function viewFaction(){
 /* ============ WATCHLIST VIEW ============ */
 // Who has missed the 1% value written in the sheet (14k, 120m, 1.8m ...). Used to decide who needs to leave.
 function viewWatch(){
-  const mSel = new Set(M.map((_, i) => i)), tSel = new Set(allTypes);
+  const mSel = doneSet(), tSel = new Set(allTypes);
   html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Show<select id="sf"><option value="below">Below 1% at least once</option><option value="all">All players</option><option value="clean">Met every 1% value</option></select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw), multi("Contest types", typeOpts, tSel, draw));
