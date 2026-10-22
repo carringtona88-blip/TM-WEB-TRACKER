@@ -329,6 +329,8 @@ async function loadLive(){
 }
 
 /* ---------- App data ---------- */
+let CUR = new Set();
+const isCurrent = p => CUR.has(p) && roster(p) !== "quit";
 const isDone = mi => M[mi] && M[mi].done !== false;
 const doneSet = () => new Set(M.map((_, i) => i).filter(isDone));
 const ipNote = mi => isDone(mi) ? "" : '<p class="note" style="border-left:4px solid var(--gold);padding-left:10px"><b>In progress.</b> This month is for viewing and checking only. It is not counted in player profiles, rankings, the faction trend, the watchlist or management until the sheet\'s Input Progress cell says Completed.</p>';
@@ -364,6 +366,8 @@ function derive(){
       if (afterQuit || joined.has(p) || e.f[p] === "excused") delete e.s[p];
     }));
   });
+  const lastM = M[M.length - 1];
+  CUR = new Set(lastM ? (lastM.players || []).filter(p => (lastM.pf || {})[p] !== "quit") : []);
   // Management: anyone with a role code in any month is management, whatever role (or no role) they have in other months.
   MG = {};
   M.forEach((m, mi) => isDone(mi) && (m.players || []).forEach(p => { (MG[p] || (MG[p] = [])).push({mi, code: (m.roles || {})[p] || ""}); }));
@@ -1005,20 +1009,20 @@ function viewWatch(){
     const ps = Object.fromEntries(posStats(mSel, [...tSel]).map(r => [r.p, r]));
     const ro = []; M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (e.m === "rank" && e.op && tSel.has(e.ty)) ro.push(mon(mi) + ": " + e.t + " (1% value " + short(e.op) + ")"); }); });
     const q = $("#pq").value.trim().toLowerCase(), sf = $("#sf").value;
-    const active = r => roster(r.p) !== "quit";
+    const active = r => isCurrent(r.p);
     const missed = all.filter(r => r.below > 0 && active(r));
     const worst = [...missed].sort((a, b) => a.pct - b.pct || b.below - a.below).slice(0, 10);
     const rows = [...all].sort((a, b) => a.pct - b.pct || b.below - a.below)
-      .filter(r => q ? r.p.toLowerCase().includes(q) : (active(r) && (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0))));
+      .filter(r => active(r) && (q ? r.p.toLowerCase().includes(q) : (sf === "all" || (sf === "below" ? r.below > 0 : r.below === 0))));
     const li = r => `<li><b>${esc(r.p)}</b><i>${r.met}/${r.n} met · ${Math.round(r.pct*100)}%</i></li>`;
     html($("#out"), all.length ? `
-      ${q ? "" : `<p class="note"><b>${missed.length}</b> player${missed.length === 1 ? "" : "s"} below at least one 1% value written in the sheet (14k, 120m, 1.8m and so on). A blank cell means the player wasn't listed for that contest; a 0 counts as below. Players marked (EX) in the sheet count as met. Zeros are ignored for players who quit (QF) or joined (J). Only the flash feud combined total is checked, not flash feuds 1 to 4.</p>
+      ${q ? "" : `<p class="note"><b>${missed.length}</b> player${missed.length === 1 ? "" : "s"} below at least one 1% value written in the sheet (14k, 120m, 1.8m and so on). Only current players are shown: anyone listed in the latest month who hasn't quit. A blank cell means the player wasn't listed for that contest; a 0 counts as below. Players marked (EX) in the sheet count as met. Zeros are ignored for players who quit (QF) or joined (J). Only the flash feud combined total is checked, not flash feuds 1 to 4.</p>
       ${ro.length ? `<details class="note"><summary>${ro.length} contests have a 1% value but the sheet only records a rank, so they can't be checked. Show them.</summary>${ro.map(esc).join("<br>")}</details>` : ""}
       <div class="grid"><div class="box bot-b"><h3>Lowest hit rate (most at risk)</h3><ol>${worst.length ? worst.map(li).join("") : "<li><i>No one</i></li>"}</ol></div></div>`}
       <div class="wrap"><table><thead><tr><th>Player</th><th class="n">Contests checked</th><th class="n">Met</th><th class="n">Below</th><th class="n">Hit rate</th><th class="n">Avg position</th><th>Contests below 1% value</th></tr></thead><tbody>
       ${rows.length ? rows.map(r=>`<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n" style="color:var(--met)">${r.met}</td><td class="n" style="color:var(--below)">${r.below}</td><td class="n">${Math.round(r.pct*100)}%</td><td class="n">${ps[r.p] ? ps[r.p].avg.toFixed(1) : "—"}</td>
         <td class="small">${r.miss.length ? `<details><summary>${r.miss.length} below</summary>${r.miss.map(esc).join("<br>")}</details>` : "None"}${r.ex ? `<div>${r.ex} excused or left (not counted)</div>` : ""}</td></tr>`).join("")
-        : '<tr><td colspan="7" class="empty">No players match.</td></tr>'}
+        : '<tr><td colspan="7" class="empty">No current players match. Players who have left the faction aren\'t shown here.</td></tr>'}
       </tbody></table></div>` : '<div class="empty">No contests have both a score and a 1% value for these filters.</div>');
   }
   draw();
