@@ -172,8 +172,8 @@ const CONFIG = {
   consistentBottomMin: 3,
 
   // Look and feel. Put picture files in the same GitHub folder as index.html and give their file names here.
-  logoUrl: "",          // e.g. "logo.png"  - small picture shown beside the title
-  headerImage: "",      // e.g. "banner.jpg" - picture behind the title bar
+  logoUrl: "logo.png",          // e.g. "logo.png"  - small picture shown beside the title
+  headerImage: "banner.jpg",      // e.g. "banner.jpg" - picture behind the title bar
   title: "Toxic Mafia Scores",
   runBy: "Website run by A.Bigs",   // the line under the title. Set to "" to hide it.
   // "black" = black background with light text. "auto" = follows the phone/computer light or dark setting.
@@ -214,7 +214,7 @@ const $ = s => document.querySelector(s);
   if (CONFIG.title){ $("#ttl").textContent = CONFIG.title; document.title = CONFIG.title; }
   $("#by").textContent = CONFIG.runBy || ""; $("#by").hidden = !CONFIG.runBy;
   if (CONFIG.logoUrl){ const i = $("#logo"); i.src = CONFIG.logoUrl; i.hidden = false; }
-  if (CONFIG.headerImage){ const t = document.querySelector(".top"); t.style.backgroundImage = "linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,.5)), url('" + CONFIG.headerImage.replace(/'/g, "") + "')"; t.style.backgroundSize = "cover"; t.style.backgroundPosition = "center"; t.style.color = "#fff"; }
+  if (CONFIG.headerImage){ const t = document.querySelector(".top"); t.style.backgroundImage = "linear-gradient(rgba(0,0,0,.15),rgba(0,0,0,.15)), url('" + CONFIG.headerImage.replace(/'/g, "") + "')"; t.style.backgroundSize = "cover"; t.style.backgroundPosition = "center"; t.style.color = "#fff"; }
 })();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
