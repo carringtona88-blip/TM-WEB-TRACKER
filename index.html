@@ -396,9 +396,9 @@ function derive(){
   });
   const lastM = M[M.length - 1];
   CUR = new Set(lastM ? (lastM.players || []).filter(p => (lastM.pf || {})[p] !== "quit") : []);
-  // Management: anyone with a role code in any month is management, whatever role (or no role) they have in other months.
+  // Management (in-progress months count for who holds a role now; scores still use completed months only): anyone with a role code in any month is management, whatever role (or no role) they have in other months.
   MG = {};
-  M.forEach((m, mi) => isDone(mi) && (m.players || []).forEach(p => { (MG[p] || (MG[p] = [])).push({mi, code: (m.roles || {})[p] || ""}); }));
+  M.forEach((m, mi) => (m.players || []).forEach(p => { (MG[p] || (MG[p] = [])).push({mi, code: (m.roles || {})[p] || ""}); }));
   Object.keys(MG).forEach(p => { if (!MG[p].some(x => x.code)) delete MG[p]; });
   M.forEach(m => m.events.forEach(e => {
     const ent = Object.entries(e.s); e.n = ent.length; e.pos = {};
