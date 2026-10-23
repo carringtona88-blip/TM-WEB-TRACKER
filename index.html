@@ -776,7 +776,40 @@ function reviewPanel(me, rk, total, mine, minN){
   return `<h3 class="sec">Performance review</h3>
     <div class="review">${lines.map(l => `<p>${l}</p>`).join("")}</div>
     <div class="box" style="margin-bottom:14px"><h3>Average position by month <span class="small">· 100 = top of the field</span></h3>
-      ${me.ms.map(x => `<div class="mbar"><b>${esc(mon(x.mi))}</b><div><i class="${x.avg >= 60 ? "hi" : x.avg <= 35 ? "lo" : ""}" style="width:${Math.max(2, x.avg)}%"></i></div><span>${Math.round(x.avg)} · ${x.n} contests</span></div>`).join("")}</div>`;
+      ${me.ms.map(x => `<div class="mbar"><b>${esc(mon(x.mi))}</b><div><i class="${x.avg >= 60 ? "hi" : x.avg <= 35 ? "lo" : ""}" style="width:${Math.max(2, x.avg)}%"></i></div><span>${Math.round(x.avg)} · ${x.n} contests</span></div>`).join("")}</div>
+    ${growthPlan(me, mine)}`;
+}
+// What would help a player grow: every point comes from their own results in the sheet.
+function growthPlan(me, mine){
+  const core = mine.filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average" && r.e.n > 1 && r.pos != null);
+  if (core.length < 3) return "";
+  const sc = r => (1 - (r.pos - 1) / (r.e.n - 1)) * 100;
+  const GR = [["Kick offs", ["Kick Off"]], ["Feuds", ["Feud"]], ["Flash feuds (combined total)", ["Flash Feud Total"]], ["Faction contests", ["Faction Contest", "Loot Contest", "Boss Battle"]], ["Showdown contests", ["Showdown Contest"]]];
+  const areas = GR.map(([l, t]) => { const rs = core.filter(r => t.includes(r.e.ty)); return rs.length >= 2 ? {l, n: rs.length, avg: rs.reduce((s, r) => s + sc(r), 0) / rs.length} : null; }).filter(Boolean).sort((a, b) => a.avg - b.avg);
+  const tips = [];
+  if (areas.length >= 2){
+    const lo = areas[0], hi = areas[areas.length - 1];
+    if (hi.avg - lo.avg >= 10) tips.push(`<b>Focus area: ${esc(lo.l)}.</b> Average score ${Math.round(lo.avg)} over ${lo.n} contests, against ${Math.round(hi.avg)} in ${esc(hi.l)} (${hi.n} contests). Lifting the weakest area is the quickest gain.`);
+    else tips.push(`<b>Even across contest types</b> (${areas.map(a => esc(a.l) + " " + Math.round(a.avg)).join(", ")}). No single area is holding them back, so growth has to come from every contest.`);
+  }
+  const below = core.filter(r => r.st === "below" && r.e.op && r.e.m === "score").sort((a, b) => a.v / a.e.op - b.v / b.e.op);
+  if (below.length){
+    const near = [...below].sort((a, b) => b.v / b.e.op - a.v / a.e.op).slice(0, 3);
+    tips.push(`<b>Reach the 1% value.</b> Missed in ${below.length} contest${below.length === 1 ? "" : "s"}. Closest: ${near.map(r => `${esc(mon(r.mi) + ": " + r.e.t)} (${Math.round(r.v / r.e.op * 100)}% of target, ${fmt(r.e.op - r.v)} short)`).join("; ")}.`);
+  } else if (me.met) tips.push(`<b>1% value:</b> met every time (${me.met} of ${me.met}). The minimum is secure, so the aim is to climb the positions above it.`);
+  const weak = core.filter(lowOk).sort((a, b) => sc(a) - sc(b)).slice(0, 3);
+  if (weak.length && me.low) tips.push(`<b>Lift the lowest finishes.</b> ${weak.map(r => `${esc(mon(r.mi) + ": " + r.e.t)} (position ${r.pos} of ${r.e.n})`).join("; ")}. These pull the average down most.`);
+  if (me.delta != null && me.trend === "Declining"){
+    const w = me.ms.reduce((a, x, i, arr) => i && arr[i - 1].avg - x.avg > (a ? a.d : 0) ? {x, d: arr[i - 1].avg - x.avg} : a, null);
+    tips.push(`<b>Reverse the decline.</b> Down ${Math.abs(Math.round(me.delta))} points on earlier months${w ? `, with the biggest drop in ${esc(mon(w.x.mi))} (${Math.round(w.d)} points)` : ""}. Worth checking what changed that month.`);
+  } else if (me.delta != null && me.trend === "Improving") tips.push(`<b>Keep going.</b> Up ${Math.round(me.delta)} points on earlier months, so whatever changed is working.`);
+  const bands = [[25, "below average"], [40, "mid-table"], [55, "above average"], [75, "a top performer"]], nxt = bands.find(([b]) => b > me.avg);
+  if (nxt){
+    const fld = [...core.map(r => r.e.n)].sort((a, b) => a - b)[Math.floor(core.length / 2)], gap = nxt[0] - me.avg;
+    tips.push(`<b>Next level: ${nxt[1]} (score ${nxt[0]}).</b> That is ${Math.round(gap)} points more than now, roughly ${Math.max(1, Math.round(gap / 100 * (fld - 1)))} places higher in a typical contest of ${fld} players.`);
+  } else tips.push(`<b>Already a top performer.</b> The aim is consistency: keep every contest at this level.`);
+  return `<div class="box top-b" style="margin-bottom:14px"><h3>What would help ${esc(me.p)} grow</h3><ul class="steps">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
+    <p class="small">Based only on the results in the sheet. Reasons such as activity, time zones or events missed aren't in the data, so use these as talking points rather than conclusions.</p></div>`;
 }
 
 /* ============ PLAYER VIEW ============ */
@@ -843,7 +876,7 @@ function viewPlayer(){
     html($("#out"), `
       <h2>${esc(name)}${rosterPill(name)}</h2>
       ${isMgmt(name) ? `<p class="small">Management: ${esc(roleHistory(name))}</p>` : ""}
-      ${(() => { const PS = perfStats(mSel), me = PS.find(x => x.p === name); return reviewPanel(me, [...PS].sort((a, b) => b.avg - a.avg).findIndex(x => x.p === name) + 1, PS.length, mine); })()}
+      ${(() => { const PS = perfStats(mSel), me = PS.find(x => x.p === name), rf = rankFair(PS.filter(x => isCurrent(x.p)), (a, b) => b.avg - a.avg || b.n - a.n), mr = rf.find(x => x.p === name); return reviewPanel(me, mr ? mr.i : null, rf.ranked, mine, rf.rankMin); })()}
       ${playerStats(mine, N)}
       <div class="facts">
         <div class="fact"><b>${rows.length}</b><span>Entries shown</span></div>
