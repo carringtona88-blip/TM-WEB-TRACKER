@@ -466,7 +466,9 @@ function checks(e){
 }
 const PILL = {met:"Met 1%", below:"Below 1%", excused:"Excused", quit:"Left faction"};
 const pill = st => st ? `<span class="pill ${st}">${PILL[st]}</span>` : `<span class="pill none">No target</span>`;
-const roster = p => { for (let i = M.length - 1; i >= 0; i--){ const f = (M[i].pf || {})[p]; if (f) return f; } return ""; };
+// Status comes from the latest month the player actually appears in (has a score or a join flag, or is marked quit).
+// So someone who quit in August but rejoined (JO) in September is current again.
+const roster = p => { for (let i = M.length - 1; i >= 0; i--){ const m = M[i], f = (m.pf || {})[p]; if (f) return f; if (m.events.some(e => e.s[p] != null || (e.f || {})[p])) return ""; } return ""; };
 // A result that met its 1% value is never "low": that is the standard score a player can reach. Only misses (or contests with no 1% value) can be low.
 const lowOk = r => r.st == null || r.st === "below";
 const flagBottom = r => r.n >= CONFIG.consistentBottomMin && r.low / r.n * 100 >= CONFIG.consistentBottomShare;
@@ -629,6 +631,14 @@ function viewEvent(){
 /* ============ PERFORMANCE ============ */
 // Performance score: average position across contests, scaled 0-100 (100 = top of the field, 50 = middle).
 const PCT = (e, p) => e.n > 1 ? (1 - (e.pos[p] - 1) / (e.n - 1)) * 100 : 100;
+// Ranking needs a fair sample: a player is only given a rank once they have at least half the contests of the most-played player.
+// Everyone else is listed after the ranked players with no rank number yet.
+function rankFair(arr, cmp){
+  const mx = Math.max(...arr.map(r => r.n), 1), min = Math.ceil(mx / 2);
+  const q = arr.filter(r => r.n >= min).sort(cmp), u = arr.filter(r => r.n < min).sort(cmp);
+  const out = [...q.map((r, i) => ({...r, i: i + 1})), ...u.map(r => ({...r, i: null}))];
+  out.rankMin = min; out.ranked = q.length; return out;
+}
 function perfStats(mSel, types){
   const mc = M.map(m => m.events.filter(inStats).length);   // contests in each month, whatever the filter
   const P = {}, rec = p => P[p] || (P[p] = {p, n:0, sum:0, low:0, top:0, met:0, below:0, mo:{}});
@@ -677,16 +687,16 @@ function viewPerf(){
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#pq").oninput = draw; $("#cat").onchange = draw;
   function draw(){
-    const all = perfStats(mSel, CATS[$("#cat").value]).sort((a, b) => b.avg - a.avg || b.n - a.n).map((r, i) => ({...r, i: i + 1}));
+    const all = rankFair(perfStats(mSel, CATS[$("#cat").value]), (a, b) => b.avg - a.avg || b.n - a.n);
     if (!all.length) return html($("#out"), '<div class="empty">No data for these filters.</div>');
     const q = $("#pq").value.trim().toLowerCase();
     const table = rows => `<div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th class="n">Earlier → latest</th><th>Month by month</th><th class="n">In bottom 25%</th><th class="n">1% hit rate</th></tr></thead><tbody>
-      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="n">${r.delta == null ? "—" : Math.round(r.earlier) + " → " + Math.round(r.latest.avg)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n} (${Math.round(r.low / r.n * 100)}%)${flagBottom(r) ? ' <span class="pill below">Flag</span>' : ""}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
+      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i == null ? "—" : r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${Math.round(r.avg)}</td><td>${trendTxt(r)}</td><td class="n">${r.delta == null ? "—" : Math.round(r.earlier) + " → " + Math.round(r.latest.avg)}</td><td class="small">${r.ms.map(x => mon(x.mi) + " " + Math.round(x.avg)).join(" · ")}</td><td class="n">${r.low} of ${r.n} (${Math.round(r.low / r.n * 100)}%)${flagBottom(r) ? ' <span class="pill below">Flag</span>' : ""}</td><td class="n">${hitTxt(r)}</td></tr>`).join("")
         : '<tr><td colspan="9" class="empty">No players match.</td></tr>'}
       </tbody></table></div>`;
     if (q){   // searching: the player's own information goes straight to the top
       const rows = all.filter(r => r.p.toLowerCase().includes(q)), exact = all.find(r => r.p.toLowerCase() === q);
-      return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2>` + reviewPanel(exact, exact.i, all.length, playerRows(exact.p, mSel)) : "") + table(rows) + '<p class="small">Clear the search box to see the top 20, bottom 20 and growth lists.</p>');
+      return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2>` + reviewPanel(exact, exact.i, all.ranked, playerRows(exact.p, mSel), all.rankMin) : "") + table(rows) + '<p class="small">Clear the search box to see the top 20, bottom 20 and growth lists.</p>');
     }
     const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
     const grow = pool.filter(r => r.delta != null && r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 10);
@@ -709,7 +719,7 @@ function viewPerf(){
       </div>
       ${table(all)}
       ${growthExplainer(all)}
-      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of ${CONFIG.trendPoints} points or more counts as improving or declining (see the breakdown above this note). Top and bottom 20 only include players in at least ${Math.ceil(maxN/2)} contests. In the bottom 25% means finishing in the lowest quarter of the field in a contest; a result that met the 1% value is never counted as bottom quarter. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`);
+      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of ${CONFIG.trendPoints} points or more counts as improving or declining (see the breakdown above this note). Players are only given a rank number, and only appear in the top and bottom 20, once they have at least ${Math.ceil(maxN/2)} contests (half of the most anyone has played), so a few good results can't outrank someone who has played the whole run. Players with fewer contests are listed last with no rank yet. In the bottom 25% means finishing in the lowest quarter of the field in a contest; a result that met the 1% value is never counted as bottom quarter. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`);
   }
   draw();
 }
@@ -719,14 +729,14 @@ function playerRows(name, mSel){
   M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (inStats(e) && e.s[name] != null) out.push({mi, e, v: e.s[name], pos: e.pos[name], st: status(e, e.s[name], name)}); }); });
   return out;
 }
-function reviewPanel(me, rk, total, mine){
+function reviewPanel(me, rk, total, mine, minN){
   if (!me) return "";
   const lab = r => mon(r.mi) + ": " + r.e.t;
   const lvl = me.avg >= 75 ? "a top performer" : me.avg >= 55 ? "above average" : me.avg >= 40 ? "mid-table" : me.avg >= 25 ? "below average" : "near the bottom of the faction";
   const d = me.delta == null ? 0 : Math.abs(Math.round(me.delta));
   const best = [...mine].filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
   const lines = [
-    `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, number ${rk} of ${total} players.`,
+    `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, ${rk == null ? `not ranked yet: ${me.n} contest${me.n === 1 ? "" : "s"} so far and ${minN || "more"} are needed` : `number ${rk} of ${total} ranked players`}.`,
     me.delta == null ? "Not enough finished months yet to show a trend."
       : me.trend === "Improving" ? `<span class="up">Improving:</span> up ${d} points on earlier months (${Math.round(me.earlier)} → ${Math.round(me.latest.avg)}).`
       : me.trend === "Declining" ? `<span class="down">Declining:</span> down ${d} points on earlier months (${Math.round(me.earlier)} → ${Math.round(me.latest.avg)}).` : "Trend is steady compared with earlier months.",
@@ -843,7 +853,7 @@ function viewRank(){
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#pq").oninput = draw; $("#cat").onchange = draw; $("#sf").onchange = draw;
   function draw(){
-    const all = posStats(mSel, CATS[$("#cat").value]).sort((a, b) => a.avg - b.avg || b.n - a.n).map((r, i) => ({...r, i: i + 1}));
+    const all = rankFair(posStats(mSel, CATS[$("#cat").value]), (a, b) => a.avg - b.avg || b.n - a.n);
     if (!all.length) return html($("#out"), '<div class="empty">No data for these filters.</div>');
     const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
     const sf = $("#sf").value, mN = /^(top|bot)(\d+)$/.exec(sf), q = $("#pq").value.trim().toLowerCase();
@@ -859,7 +869,7 @@ function viewRank(){
         const li = r => `<li><b>${esc(mon(r.mi) + ": " + r.e.t)}</b><i>position ${r.pos} of ${r.e.n} · ${r.e.m === "rank" ? "rank " + fmt(r.v) : fmt(r.v)}</i></li>`;
         const nb = Math.min(5, Math.ceil(pr.length / 2)), nw = Math.min(5, Math.floor(pr.length / 2));
         panel = `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2>
-          <div class="facts"><div class="fact big"><b>${exact.i}</b><span>Rank out of ${all.length} players</span></div><div class="fact big"><b>${exact.avg.toFixed(1)}</b><span>Average position</span></div><div class="fact"><b>${exact.n}</b><span>Contests</span></div></div>
+          <div class="facts"><div class="fact big"><b>${exact.i == null ? "—" : exact.i}</b><span>${exact.i == null ? `Not ranked yet (needs ${all.rankMin} contests)` : `Rank out of ${all.ranked} ranked players`}</span></div><div class="fact big"><b>${exact.avg.toFixed(1)}</b><span>Average position</span></div><div class="fact"><b>${exact.n}</b><span>Contests</span></div></div>
           <div class="grid">
             <div class="box top-b"><h3>Best contests</h3><ol>${pr.slice(0, nb).map(li).join("") || "<li><i>None</i></li>"}</ol></div>
             <div class="box bot-b"><h3>Worst contests</h3><ol>${nw ? pr.slice(-nw).reverse().map(li).join("") : "<li><i>Not enough contests yet</i></li>"}</ol></div>
@@ -877,10 +887,10 @@ function viewRank(){
     const t3 = (!q && top3) ? `<h2>Top 3 by category</h2><div class="grid">${top3}</div><h2>All players</h2>` : "";
     html($("#out"), t3 + panel + `
       <div class="wrap"><table><thead><tr><th class="n">Rank</th><th>Player</th><th class="n">Contests</th><th class="n">Avg position</th><th class="n">Best</th><th class="n">Worst</th><th>Position by contest</th></tr></thead><tbody>
-      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${r.avg.toFixed(1)}</td><td class="n">${r.best}</td><td class="n">${r.worst}</td><td class="small"><details><summary>Show</summary>${r.list.map(esc).join("<br>")}</details></td></tr>`).join("")
+      ${rows.length ? rows.map(r=>`<tr><td class="n">${r.i == null ? "—" : r.i}</td><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.n}</td><td class="n">${r.avg.toFixed(1)}</td><td class="n">${r.best}</td><td class="n">${r.worst}</td><td class="small"><details><summary>Show</summary>${r.list.map(esc).join("<br>")}</details></td></tr>`).join("")
         : '<tr><td colspan="7" class="empty">No players match.</td></tr>'}
       </tbody></table></div>
-<p class="note">Position 1 is best. Each player's average position across every contest they appear in, and where that lands them out of ${all.length} players. Top and bottom lists only include players in at least ${Math.ceil(maxN/2)} contests.</p>
+<p class="note">Position 1 is best. Each player's average position across every contest they appear in, and where that lands them out of ${all.ranked} ranked players. A player is only given a rank once they have at least ${all.rankMin} contests (half of the most anyone has played), so a few good results can't outrank someone who has played the whole run. Players with fewer contests are listed last with no rank yet. Top and bottom lists use the same rule.</p>
 <p class="small">How the Top 3 by category works: for each category, players are ordered by their average position across that category's contests in the months selected above (lowest is best). Only current players are listed, and a player needs to appear in at least half of the category's contests to qualify. The flash feud category uses the combined total only, not flash feuds 1 to 4.</p>`);
   }
   draw();
@@ -894,7 +904,7 @@ function viewMgmt(){
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#pq").oninput = draw; $("#rl").onchange = draw;
   function draw(){
-    const ps = perfStats(mSel, null).sort((a, b) => b.avg - a.avg).map((r, i) => ({...r, i: i + 1}));
+    const ps = rankFair(perfStats(mSel, null), (a, b) => b.avg - a.avg);
     const mgAll = ps.filter(r => isMgmt(r.p)), mg = mgAll.filter(r => roster(r.p) !== "quit"), rest = ps.filter(r => !isMgmt(r.p));
     if (!mg.length) return html($("#out"), '<div class="empty">No management members found. A role is read from the code after a name in the sheet, like (LD), (EF), (OF) or (CO).</div>');
     const mean = a => a.length ? a.reduce((s, x) => s + x.avg, 0) / a.length : null;
@@ -911,7 +921,7 @@ function viewMgmt(){
       const alt = !exact && allPlayers.find(p => p.toLowerCase() === q);
       const seen = alt ? M.map((m, mi) => (m.raws || {})[alt] ? mon(mi) + ': "' + m.raws[alt] + '"' : "").filter(Boolean).join(" · ") : "";
       if (alt) return html($("#out"), `<div class="note"><b>${esc(alt)}</b> isn't management. No month's name cell has a role code (LD), (EF), (OF) or (CO) after the name. This is how the name reads in the sheet: ${esc(seen || "not found")}</div>` + table);
-      return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2><p class="small">${esc(roleHistory(exact.p))}</p>` + reviewPanel(exact, exact.i, ps.length, playerRows(exact.p, mSel)) : "") + table);
+      return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2><p class="small">${esc(roleHistory(exact.p))}</p>` + reviewPanel(exact, exact.i, ps.ranked, playerRows(exact.p, mSel), ps.rankMin) : "") + table);
     }
     const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
     const grow = mg.filter(r => r.delta != null && r.delta >= CONFIG.trendPoints).sort((a, b) => b.delta - a.delta);
@@ -963,17 +973,20 @@ function factionChart(pts){
 }
 function viewFaction(){
   const mSel = doneSet();
-  html($("#controls"), `<label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
+  // Faction performance counts every contest with a faction position, flash feuds 1 to 4 included (player stats use the flash feud total only)
+  const FLK = "Flash feuds (1 to 4)", FC = {...CATS, [FLK]: ["Flash Feud"]};
+  const fcKeys = () => [...catKeys(), ...(M.some(m => m.events.some(e => e.ty === "Flash Feud" && e.fr != null)) ? [FLK] : [])];
+  html($("#controls"), `<label class="f">Contests<select id="cat">${fcKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
   $("#cat").onchange = draw;
   function draw(){
-    const types = CATS[$("#cat").value], pts = [];
-    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (inStats(e) && e.fr != null && (!types || types.includes(e.ty))) pts.push({mi, e, fr: e.fr}); }); });
+    const types = FC[$("#cat").value], pts = [];
+    M.forEach((m, mi) => { if (mSel.has(mi)) m.events.forEach(e => { if (facOk(e) && (!types || types.includes(e.ty))) pts.push({mi, e, fr: e.fr}); }); });
     if (!pts.length) return html($("#out"), '<div class="empty">No faction results for these filters.</div>');
     const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
     const byM = {}; pts.forEach(p => (byM[p.mi] || (byM[p.mi] = [])).push(p.fr));
     const ms = Object.keys(byM).map(Number).sort((a, b) => a - b).map(mi => ({mi, v: byM[mi], avg: avg(byM[mi]), best: Math.min(...byM[mi]), worst: Math.max(...byM[mi])}));
-    const mcnt = {}; M.forEach((m, mi) => { if (mSel.has(mi)) mcnt[mi] = m.events.filter(e => inStats(e) && e.fr != null).length; });
+    const mcnt = {}; M.forEach((m, mi) => { if (mSel.has(mi)) mcnt[mi] = m.events.filter(facOk).length; });
     const msOk0 = ms.filter(x => mcnt[x.mi] >= CONFIG.minMonthContests), msOk = msOk0.length ? msOk0 : ms;
     let move = null;
     if (msOk.length >= 2){ const earlier = avg(msOk.slice(0, -1).map(x => x.avg)); move = earlier - msOk[msOk.length-1].avg; }  // positive = moved up the table
@@ -991,19 +1004,16 @@ function viewFaction(){
       hm ? `Player 1% hit rate in ${esc(M[hm.mi].label)}: ${Math.round(hit)}% (${hm.met} of ${hm.met + hm.below} checks met, ${hm.miss} players below at least once).` : "Player 1% hit rate: no contests with a score and a 1% value yet."
     ];
     const overview = `<div class="health ${level}"><div class="hbadge">${LABEL[level]}</div><div><h2 style="margin:0 0 4px">Faction overview</h2><ul>${reasons.map(r => `<li>${r}</li>`).join("")}</ul>
-      <p class="small">Months with fewer than ${CONFIG.minMonthContests} contests are left out until they fill in. Health combines two things: where the faction finishes (latest finished month against earlier months) and how many player checks met their 1% value. Needs attention = finishing lower, or a hit rate under ${CONFIG.healthWeakHit}%. Strong = nothing slipping and either finishing higher or a hit rate of ${CONFIG.healthGoodHit}% or more. Otherwise Steady.</p></div></div>`;
-    const cats = catKeys().filter(k => CATS[k]);
+      <p class="small">Months with fewer than ${CONFIG.minMonthContests} contests are left out until they fill in. Health combines two things: where the faction finishes (latest finished month against earlier months) and how many player checks met their 1% value. Needs attention = finishing lower, or a hit rate under ${CONFIG.healthWeakHit}%. Strong = nothing slipping and either finishing higher or a hit rate of ${CONFIG.healthGoodHit}% or more. Otherwise Steady. Faction position and the trend count every contest the faction has a position for, including flash feuds 1 to 4. Players' own stats use the flash feud combined total only.</p></div></div>`;
+    const cats = fcKeys().filter(k => FC[k]);
     const monthData = [...mSel].sort((a, b) => a - b).map(mi => {
-      const evs = M[mi].events.filter(e => inStats(e) && e.fr != null);
+      const evs = M[mi].events.filter(facOk);
       if (!evs.length) return null;
       const by = {};
-      cats.forEach(k => { const g = evs.filter(e => CATS[k].includes(e.ty)).map(e => e.fr); if (g.length) by[k] = {best: Math.min(...g), avg: avg(g), n: g.length}; });
-      const fl = M[mi].events.filter(e => e.ty === "Flash Feud" && e.fr != null).map(e => e.fr);
-      if (fl.length) by["Flash feuds (1 to 4)"] = {best: Math.min(...fl), avg: avg(fl), n: fl.length};
+      cats.forEach(k => { const g = evs.filter(e => FC[k].includes(e.ty)).map(e => e.fr); if (g.length) by[k] = {best: Math.min(...g), avg: avg(g), n: g.length}; });
       return {mi, n: evs.length, avg: avg(evs.map(e => e.fr)), by};
     }).filter(Boolean);
-    const FLK = "Flash feuds (1 to 4)";
-    const usedCats = [...cats, FLK].filter(k => monthData.some(x => x.by[k]));
+    const usedCats = cats.filter(k => monthData.some(x => x.by[k]));
     const CL = {"Flash feuds (1 to 4)": "Flash feuds 1-4 (best)", "Kick offs": "Kick off", "Feuds": "Feuds (best)", "Flash feuds (combined total)": "Flash feud total", "Faction contests": "Faction contests (best)", "Showdown contests": "Showdown (best)", "Loot contests": "Loot (best)", "Boss battles": "Boss battle (best)"};
     const monthTable = `<h3 class="sec">Month by month</h3>
       <div class="wrap"><table><thead><tr><th>Month</th><th class="n">Contests</th><th class="n">Avg position</th><th>Change vs last month</th>${usedCats.map(k => `<th class="n">${esc(CL[k] || k)}</th>`).join("")}</tr></thead><tbody>
