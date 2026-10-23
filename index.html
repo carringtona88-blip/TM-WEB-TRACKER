@@ -681,14 +681,39 @@ function growthExplainer(all){
     <p class="small">Each month counts equally, whether it had 3 contests or 10, and a month only counts toward the trend once it has at least ${CONFIG.minMonthContests} contests, so a month that is still filling in is shown but not used. Only the flash feud combined total is used, not flash feuds 1 to 4. The ${CONFIG.trendPoints} point threshold can be changed in the settings at the top of the file.</p></details>`;
 }
 
+/* ---------- MVP of the month ---------- */
+// Most improved in a month: the player whose average contest score (0 to 100) that month rose the most compared with their average in the earlier completed months.
+function mvpBox(mi){
+  if (!isDone(mi)) return "";
+  const minC = CONFIG.minMonthContests, all = doneSet();
+  const cands = perfStats(all, null).filter(r => isCurrent(r.p)).map(r => {
+    const cur = r.ms.find(x => x.mi === mi), prev = r.ms.filter(x => x.mi < mi && x.n >= minC);
+    if (!cur || cur.n < minC || !prev.length) return null;
+    const earlier = prev.reduce((s, x) => s + x.avg, 0) / prev.length;
+    return {p: r.p, cur: cur.avg, n: cur.n, earlier, delta: cur.avg - earlier};
+  }).filter(Boolean).sort((a, b) => b.delta - a.delta || b.cur - a.cur);
+  const explain = `<p class="small">MVP of the month = the current player who improved the most. Each contest turns a player's position into a score from 0 to 100 (first place = 100, last = 0). A player's month score is the average of those, and improvement is this month's score minus their average in the earlier completed months. A player needs at least ${minC} contests in the month and an earlier month to compare with. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`;
+  if (!cands.length || cands[0].delta <= 0) return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)}</h3><p>${cands.length ? "No one improved on their earlier months this month." : "Not enough earlier months to compare yet."}</p>${explain}</div>`;
+  const w = cands[0], mine = playerRows(w.p, new Set([mi])).filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
+  const li = (r, i) => `<li><b>${esc(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.cur)} (+${Math.round(r.delta)})</i></li>`;
+  return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)}</h3>
+    <div class="facts"><div class="fact big"><b style="font-size:1.35rem">🏆 ${esc(w.p)}</b><span>Most improved</span></div>
+      <div class="fact big"><b>+${Math.round(w.delta)}</b><span>${Math.round(w.earlier)} before → ${Math.round(w.cur)} this month</span></div>
+      <div class="fact"><b>${w.n}</b><span>Contests this month</span></div></div>
+    ${mine ? `<p class="small">Best result: ${esc(mine.e.t)} (position ${mine.pos} of ${mine.e.n}).</p>` : ""}
+    ${cands.filter(r => r.delta > 0).length > 1 ? `<h3 class="sec">Next most improved</h3><ol start="2">${cands.slice(1, 5).filter(r => r.delta > 0).map(li).join("")}</ol>` : ""}
+    ${explain}</div>`;
+}
 function viewPerf(){
   const mSel = doneSet();
   html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
-    <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>`);
+    <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
+    <label class="f">MVP of the month<select id="mvpm">${[...doneSet()].sort((a, b) => b - a).map(mi => `<option value="${mi}">${esc(M[mi].label)}</option>`).join("")}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
-  $("#pq").oninput = draw; $("#cat").onchange = draw;
+  $("#pq").oninput = draw; $("#cat").onchange = draw; $("#mvpm").onchange = draw;
   function draw(){
-    const all = rankFair(perfStats(mSel, CATS[$("#cat").value]), (a, b) => b.avg - a.avg || b.n - a.n);
+    const raw = perfStats(mSel, CATS[$("#cat").value]);   // players who have left the faction are not part of the lists, ranks or table; searching a name still finds them
+    const all = rankFair(raw.filter(r => isCurrent(r.p)), (a, b) => b.avg - a.avg || b.n - a.n), gone = raw.filter(r => !isCurrent(r.p)).map(r => ({...r, i: null}));
     if (!all.length) return html($("#out"), '<div class="empty">No data for these filters.</div>');
     const q = $("#pq").value.trim().toLowerCase();
     const table = rows => `<div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Contests</th><th class="n">Score</th><th>Trend</th><th class="n">Earlier → latest</th><th>Month by month</th><th class="n">In bottom 25%</th><th class="n">1% hit rate</th></tr></thead><tbody>
@@ -696,7 +721,7 @@ function viewPerf(){
         : '<tr><td colspan="9" class="empty">No players match.</td></tr>'}
       </tbody></table></div>`;
     if (q){   // searching: the player's own information goes straight to the top
-      const rows = all.filter(r => r.p.toLowerCase().includes(q)), exact = all.find(r => r.p.toLowerCase() === q);
+      const every = [...all, ...gone], rows = every.filter(r => r.p.toLowerCase().includes(q)), exact = every.find(r => r.p.toLowerCase() === q);
       return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2>` + reviewPanel(exact, exact.i, all.ranked, playerRows(exact.p, mSel), all.rankMin) : "") + table(rows) + '<p class="small">Clear the search box to see the top 20, bottom 20 and growth lists.</p>');
     }
     const maxN = Math.max(...all.map(r => r.n)), pool = all.filter(r => r.n >= Math.ceil(maxN / 2));
@@ -707,7 +732,9 @@ function viewPerf(){
     const none = '<li><i>None yet</i></li>';
     const flagged = all.filter(r => flagBottom(r) && roster(r.p) !== "quit").sort((a, b) => b.low / b.n - a.low / a.n || b.n - a.n);
     const liB = r => `<li><b>${esc(r.p)}</b><i>${r.low} of ${r.n} contests (${Math.round(r.low / r.n * 100)}%)</i></li>`;
+    const mvpHtml = mvpBox(+($("#mvpm").value || -1));
     html($("#out"), `
+      ${mvpHtml}
       <div class="box bot-b" style="margin-bottom:14px"><h3>Consistently in the bottom 25% <span class="small">· in the bottom quarter in ${CONFIG.consistentBottomShare}% or more of their contests (at least ${CONFIG.consistentBottomMin} contests)</span></h3><ol>${flagged.length ? flagged.map(liB).join("") : "<li><i>No one is flagged</i></li>"}</ol></div>
 
       <div class="grid">
@@ -720,7 +747,7 @@ function viewPerf(){
       </div>
       ${table(all)}
       ${growthExplainer(all)}
-      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of ${CONFIG.trendPoints} points or more counts as improving or declining (see the breakdown above this note). Players are only given a rank number, and only appear in the top and bottom 20, once they have at least ${Math.ceil(maxN/2)} contests (half of the most anyone has played), so a few good results can't outrank someone who has played the whole run. Players with fewer contests are listed last with no rank yet. In the bottom 25% means finishing in the lowest quarter of the field in a contest; a result that met the 1% value is never counted as bottom quarter. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`);
+      <p class="note">Performance score = a player's average position across contests, scaled 0 to 100 (100 = top of the field, 50 = middle). Trend compares the latest month with earlier months; a move of ${CONFIG.trendPoints} points or more counts as improving or declining (see the breakdown above this note). Players are only given a rank number, and only appear in the top and bottom 20, once they have at least ${Math.ceil(maxN/2)} contests (half of the most anyone has played), so a few good results can't outrank someone who has played the whole run. Players with fewer contests are listed last with no rank yet. Players who have left the faction are not included in the lists, ranks or table; search a name to see them. In the bottom 25% means finishing in the lowest quarter of the field in a contest; a result that met the 1% value is never counted as bottom quarter. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`);
   }
   draw();
 }
@@ -737,7 +764,7 @@ function reviewPanel(me, rk, total, mine, minN){
   const d = me.delta == null ? 0 : Math.abs(Math.round(me.delta));
   const best = [...mine].filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
   const lines = [
-    `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, ${rk == null ? `not ranked yet: ${me.n} contest${me.n === 1 ? "" : "s"} so far and ${minN || "more"} are needed` : `number ${rk} of ${total} ranked players`}.`,
+    `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, ${rk == null ? (!isCurrent(me.p) ? "no longer in the faction, so not ranked" : `not ranked yet: ${me.n} contest${me.n === 1 ? "" : "s"} so far and ${minN || "more"} are needed`) : `number ${rk} of ${total} ranked players`}.`,
     me.delta == null ? "Not enough finished months yet to show a trend."
       : me.trend === "Improving" ? `<span class="up">Improving:</span> up ${d} points on earlier months (${Math.round(me.earlier)} → ${Math.round(me.latest.avg)}).`
       : me.trend === "Declining" ? `<span class="down">Declining:</span> down ${d} points on earlier months (${Math.round(me.earlier)} → ${Math.round(me.latest.avg)}).` : "Trend is steady compared with earlier months.",
