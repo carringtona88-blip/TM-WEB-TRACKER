@@ -687,6 +687,29 @@ function growthExplainer(all){
 
 /* ---------- MVP of the month ---------- */
 // Most improved in a month: the player whose average contest score (0 to 100) that month rose the most compared with their average in the earlier completed months.
+// Where an MVP's improvement came from: contest type by contest type, this month against their earlier months.
+function mvpWhy(w, mi, minC){
+  const rows = playerRows(w.p, doneSet()).filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average" && r.e.n > 1 && r.pos != null);
+  const sc = r => (1 - (r.pos - 1) / (r.e.n - 1)) * 100, avg = a => a.reduce((s, r) => s + sc(r), 0) / a.length;
+  const earlyRows = rows.filter(r => r.mi < mi), thisRows = rows.filter(r => r.mi === mi);
+  if (!thisRows.length || !earlyRows.length) return "";
+  const GR = [["Kick offs", ["Kick Off"]], ["Feuds", ["Feud"]], ["Flash feuds (combined total)", ["Flash Feud Total"]], ["Faction contests", ["Faction Contest", "Loot Contest", "Boss Battle"]], ["Showdown contests", ["Showdown Contest"]]];
+  const lines = GR.map(([l, t]) => { const a = earlyRows.filter(r => t.includes(r.e.ty)), b = thisRows.filter(r => t.includes(r.e.ty)); return b.length ? {l, a: a.length ? avg(a) : null, an: a.length, b: avg(b), bn: b.length} : null; }).filter(Boolean)
+    .sort((x, y) => ((y.a == null ? -Infinity : y.b - y.a)) - ((x.a == null ? -Infinity : x.b - x.a)));
+  const top = lines.find(x => x.a != null && x.b - x.a > 0);
+  const above = thisRows.filter(r => sc(r) > w.earlier).length, hi = [...thisRows].sort((a, b) => sc(b) - sc(a)).slice(0, 3);
+  const e1 = earlyRows.filter(r => r.st === "met" || r.st === "below"), t1 = thisRows.filter(r => r.st === "met" || r.st === "below");
+  const hit = rs => Math.round(rs.filter(r => r.st === "met").length / rs.length * 100);
+  return `<h3 class="sec">Where ${esc(w.p)}'s growth came from <span class="small">· scores out of 100 (100 = best)</span></h3>
+    ${top ? `<p>The biggest gain was in <b>${esc(top.l)}</b>: from ${Math.round(top.a)} to ${Math.round(top.b)} (+${Math.round(top.b - top.a)}).</p>` : ""}
+    <div class="wrap"><table><thead><tr><th>Contest type</th><th class="n">Earlier months (out of 100)</th><th class="n">${esc(M[mi].label)} (out of 100)</th><th class="n">Change</th></tr></thead><tbody>
+    ${lines.map(x => `<tr><td>${esc(x.l)}</td><td class="n">${x.a == null ? "—" : Math.round(x.a) + " <span class='small'>(" + x.an + ")</span>"}</td><td class="n">${Math.round(x.b)} <span class="small">(${x.bn})</span></td><td class="n">${x.a == null ? "new" : (x.b - x.a >= 0 ? '<span class="up">+' : '<span class="down">') + Math.round(x.b - x.a) + "</span>"}</td></tr>`).join("")}
+    </tbody></table></div>
+    <ul class="steps"><li><b>${above} of ${thisRows.length}</b> contests this month scored above ${esc(w.p)}'s earlier average of ${Math.round(w.earlier)}.</li>
+    <li>Strongest results: ${hi.map(r => `${esc(r.e.t)} (position ${r.pos} of ${r.e.n}, score ${Math.round(sc(r))})`).join("; ")}.</li>
+    ${e1.length >= 3 && t1.length >= 2 ? `<li>1% value hit rate: ${hit(e1)}% earlier, ${hit(t1)}% this month.</li>` : ""}</ul>
+    <p class="small">Scores are 0 to 100 from the position in each contest. The number in brackets is how many contests went into each average.</p>`;
+}
 function mvpBox(mi){
   if (!isDone(mi)) return "";
   const minC = CONFIG.minMonthContests, all = doneSet();
@@ -699,12 +722,14 @@ function mvpBox(mi){
   const explain = `<p class="small">MVP of the month = the current player who improved the most. Each contest turns a player's position into a score from 0 to 100 (first place = 100, last = 0). A player's month score is the average of those, and improvement is this month's score minus their average in the earlier completed months. A player needs at least ${minC} contests in the month and an earlier month to compare with. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`;
   if (!cands.length || cands[0].delta <= 0) return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)}</h3><p>${cands.length ? "No one improved on their earlier months this month." : "Not enough earlier months to compare yet."}</p>${explain}</div>`;
   const w = cands[0], mine = playerRows(w.p, new Set([mi])).filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
-  const li = (r, i) => `<li><b>${esc(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.cur)} (+${Math.round(r.delta)})</i></li>`;
-  return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)}</h3>
+  const why = mvpWhy(w, mi, minC);
+  const li = (r, i) => `<li><b>${esc(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.cur)} out of 100 (+${Math.round(r.delta)})</i></li>`;
+  return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)} <span class="small">· scores are out of 100: 100 = best, 50 = middle of the field, 0 = last</span></h3>
     <div class="facts"><div class="fact big"><b style="font-size:1.35rem">🏆 ${esc(w.p)}</b><span>Most improved</span></div>
-      <div class="fact big"><b>+${Math.round(w.delta)}</b><span>${Math.round(w.earlier)} before → ${Math.round(w.cur)} this month</span></div>
+      <div class="fact big"><b>+${Math.round(w.delta)}</b><span>Score out of 100: ${Math.round(w.earlier)} before → ${Math.round(w.cur)} this month</span></div>
       <div class="fact"><b>${w.n}</b><span>Contests this month</span></div></div>
     ${mine ? `<p class="small">Best result: ${esc(mine.e.t)} (position ${mine.pos} of ${mine.e.n}).</p>` : ""}
+    ${why}
     ${cands.filter(r => r.delta > 0).length > 1 ? `<h3 class="sec">Next most improved</h3><ol start="2">${cands.slice(1, 5).filter(r => r.delta > 0).map(li).join("")}</ol>` : ""}
     ${explain}</div>`;
 }
