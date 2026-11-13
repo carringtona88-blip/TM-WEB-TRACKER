@@ -167,6 +167,8 @@ const CONFIG = {
   trendPoints: 5,
   // A month only counts toward trends once it has at least this many contests (so a month that is still filling in can't swing the result).
   minMonthContests: 3,
+  mostImprovedAfterMonths: 3,   // Most improved: the player must have been in the faction for MORE than this many months
+  kingQueenFrom: "November 2026",   // King/Queen of the Ring starts from this month
   watchMinEvents: 5,   // Watchlist only includes players with at least this many checked contests
   // Flag a player as "consistently in the bottom 25%" when they finish in the bottom quarter in this % or more of their contests (and have at least this many contests).
   consistentBottomShare: 50,
@@ -201,7 +203,8 @@ const CONFIG = {
     {name: "July 2026",      gid: "72483425"},
     {name: "August 2026",    gid: "1588727259"},
     {name: "September 2026", gid: "21159579"},
-    {name: "October 2026",   gid: "186867806"}
+    {name: "October 2026",   gid: "186867806"},
+    {name: "November 2026",  gid: "727245454"}
   ]
 };
 /* ============================================ */
@@ -662,10 +665,11 @@ function perfStats(mSel, types){
     if (counted.length >= 2){ const prev = counted.slice(0, -1); earlier = prev.reduce((s, x) => s + x.avg, 0) / prev.length; delta = latest.avg - earlier; }
     const left = roster(r.p) === "quit";   // players who quit are not part of growth / decline
     if (left){ delta = null; earlier = null; }
-    return {...r, avg: r.sum / r.n, ms, counted, latest, delta, earlier, trend: left ? "Left" : delta == null ? "New" : delta >= CONFIG.trendPoints ? "Improving" : delta <= -CONFIG.trendPoints ? "Declining" : "Steady"};
+    const dr = delta == null ? null : Math.round(latest.avg) - Math.round(earlier);   // shown figure = rounded latest minus rounded earlier, so the sums always add up
+    return {...r, avg: r.sum / r.n, ms, counted, latest, delta, dr, earlier, trend: left ? "Left" : delta == null ? "New" : delta >= CONFIG.trendPoints ? "Improving" : delta <= -CONFIG.trendPoints ? "Declining" : "Steady"};
   });
 }
-const trendTxt = r => r.trend === "Left" ? "Left faction" : r.delta == null ? "—" : r.trend === "Improving" ? `<span class="up">↑ +${Math.round(r.delta)}</span>` : r.trend === "Declining" ? `<span class="down">↓ ${Math.round(r.delta)}</span>` : "→ steady";
+const trendTxt = r => r.trend === "Left" ? "Left faction" : r.delta == null ? "—" : r.trend === "Improving" ? `<span class="up">↑ +${r.dr}</span>` : r.trend === "Declining" ? `<span class="down">↓ ${r.dr}</span>` : "→ steady";
 const hitTxt = r => (r.met + r.below) ? Math.round(r.met / (r.met + r.below) * 100) + "% (" + r.met + "/" + (r.met + r.below) + ")" : "—";
 
 function growthExplainer(all){
@@ -681,11 +685,11 @@ function growthExplainer(all){
       <li><b>Change.</b> Latest month average minus earlier average.</li>
       <li><b>Verdict.</b> ${CONFIG.trendPoints} points or more up = <span class="up">Improving</span>. ${CONFIG.trendPoints} points or more down = <span class="down">Declining</span>. Anything between is Steady. A player with only one month has no trend yet.</li>
     </ol>
-    ${ex ? `<p><b>Example from your data:</b> ${esc(ex.p)} scored ${ex.counted.map(x => esc(mon(x.mi)) + " " + Math.round(x.avg)).join(", ")}. Earlier average ${Math.round(ex.earlier)}, latest month (${esc(mon(last.mi))}) ${Math.round(last.avg)}, so the change is ${sign}${Math.round(ex.delta)} points: <b>${ex.trend}</b>.</p>` : ""}
+    ${ex ? `<p><b>Example from your data:</b> ${esc(ex.p)} scored ${ex.counted.map(x => esc(mon(x.mi)) + " " + Math.round(x.avg)).join(", ")}. Earlier average ${Math.round(ex.earlier)}, latest month (${esc(mon(last.mi))}) ${Math.round(last.avg)}, so the change is ${sign}${ex.dr} points: <b>${ex.trend}</b>.</p>` : ""}
     <p class="small">Each month counts equally, whether it had 3 contests or 10, and a month only counts toward the trend once it has at least ${CONFIG.minMonthContests} contests, so a month that is still filling in is shown but not used. Only the flash feud combined total is used, not flash feuds 1 to 4. The ${CONFIG.trendPoints} point threshold can be changed in the settings at the top of the file.</p></details>`;
 }
 
-/* ---------- MVP of the month ---------- */
+/* ---------- Most improved of the month ---------- */
 // Most improved in a month: the player whose average contest score (0 to 100) that month rose the most compared with their average in the earlier completed months.
 // Where an MVP's improvement came from: contest type by contest type, this month against their earlier months.
 function mvpWhy(w, mi, minC){
@@ -701,32 +705,59 @@ function mvpWhy(w, mi, minC){
   const e1 = earlyRows.filter(r => r.st === "met" || r.st === "below"), t1 = thisRows.filter(r => r.st === "met" || r.st === "below");
   const hit = rs => Math.round(rs.filter(r => r.st === "met").length / rs.length * 100);
   return `<h3 class="sec">Where ${esc(w.p)}'s growth came from <span class="small">· scores out of 100 (100 = best)</span></h3>
-    ${top ? `<p>The biggest gain was in <b>${esc(top.l)}</b>: from ${Math.round(top.a)} to ${Math.round(top.b)} (+${Math.round(top.b - top.a)}).</p>` : ""}
+    ${top ? `<p>The biggest gain was in <b>${esc(top.l)}</b>: from ${Math.round(top.a)} to ${Math.round(top.b)} (+${Math.round(top.b) - Math.round(top.a)}).</p>` : ""}
     <div class="wrap"><table><thead><tr><th>Contest type</th><th class="n">Earlier months (out of 100)</th><th class="n">${esc(M[mi].label)} (out of 100)</th><th class="n">Change</th></tr></thead><tbody>
-    ${lines.map(x => `<tr><td>${esc(x.l)}</td><td class="n">${x.a == null ? "—" : Math.round(x.a) + " <span class='small'>(" + x.an + ")</span>"}</td><td class="n">${Math.round(x.b)} <span class="small">(${x.bn})</span></td><td class="n">${x.a == null ? "new" : (x.b - x.a >= 0 ? '<span class="up">+' : '<span class="down">') + Math.round(x.b - x.a) + "</span>"}</td></tr>`).join("")}
+    ${lines.map(x => `<tr><td>${esc(x.l)}</td><td class="n">${x.a == null ? "—" : Math.round(x.a) + " <span class='small'>(" + x.an + ")</span>"}</td><td class="n">${Math.round(x.b)} <span class="small">(${x.bn})</span></td><td class="n">${x.a == null ? "new" : (x.b - x.a >= 0 ? '<span class="up">+' : '<span class="down">') + (Math.round(x.b) - Math.round(x.a)) + "</span>"}</td></tr>`).join("")}
     </tbody></table></div>
     <ul class="steps"><li><b>${above} of ${thisRows.length}</b> contests this month scored above ${esc(w.p)}'s earlier average of ${Math.round(w.earlier)}.</li>
     <li>Strongest results: ${hi.map(r => `${esc(r.e.t)} (position ${r.pos} of ${r.e.n}, score ${Math.round(sc(r))})`).join("; ")}.</li>
     ${e1.length >= 3 && t1.length >= 2 ? `<li>1% value hit rate: ${hit(e1)}% earlier, ${hit(t1)}% this month.</li>` : ""}</ul>
     <p class="small">Scores are 0 to 100 from the position in each contest. The number in brackets is how many contests went into each average.</p>`;
 }
+/* ---------- King / Queen of the Ring (from November): who goes furthest over the 1% value ---------- */
+const kqStart = () => M.findIndex(m => m.label.toLowerCase().startsWith(String(CONFIG.kingQueenFrom).toLowerCase()));
+const kqMonths = () => { const s = kqStart(); return s < 0 ? [] : [...doneSet()].filter(mi => mi >= s).sort((a, b) => b - a); };
+function kqBox(mi){
+  const s = kqStart(), minC = CONFIG.minMonthContests;
+  const explain = `<p class="small">King/Queen of the Ring is about how far over the 1% value a player goes. For every contest with a 1% value, a player's result is turned into a percentage over (or under) that value: 1% value of 14k and a score of 21k is 50% over. The month's figure is the average of those percentages across the contests they entered, so a player who is well over the value every time wins, and a miss pulls the figure down. Every contest counts in full, with no cap, so the figure is exactly how far over the value the player went. Excused contests don't count. A player needs at least ${minC} contests with a 1% value that month and must still be in the faction. It runs from ${esc(CONFIG.kingQueenFrom)}. Only the flash feud combined total counts, not flash feuds 1 to 4. Contests with no 1% value can't be included.</p>`;
+  if (s < 0 || !isDone(mi) || mi < s) return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring</h3><p>${s < 0 ? `Starts with ${esc(CONFIG.kingQueenFrom)}.` : M[s] && !isDone(s) ? `${esc(M[s].label)} is still in progress. The first King/Queen of the Ring is announced when the month is marked Completed.` : `Starts with ${esc(CONFIG.kingQueenFrom)}.`}</p>${explain}</div>`;
+  const rows = [];
+  Object.values(perfStats(new Set([mi]), null)).forEach(r => { if (!isCurrent(r.p)) return;
+    const cs = playerRows(r.p, new Set([mi])).filter(x => x.e.m === "score" && x.e.op && x.v != null && x.st !== "excused");
+    if (cs.length < minC) return;
+    const over = cs.map(x => ({x, o: (x.v / x.e.op - 1) * 100})), avg = over.reduce((t, z) => t + z.o, 0) / over.length;
+    rows.push({p: r.p, avg, n: cs.length, met: cs.filter(x => x.v >= x.e.op).length, best: over.reduce((a, z) => z.o > a.o ? z : a)});
+  });
+  rows.sort((a, b) => b.avg - a.avg || b.met / b.n - a.met / a.n);
+  if (!rows.length) return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring · ${esc(M[mi].label)}</h3><p>No one has ${minC} contests with a 1% value yet.</p>${explain}</div>`;
+  const w = rows[0], sign = v => (v >= 0 ? "+" : "") + Math.round(v) + "%";
+  const li = r => `<li><b>${esc(r.p)}</b><i>${sign(r.avg)} on average · met the 1% value ${r.met} of ${r.n}</i></li>`;
+  return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring · ${esc(M[mi].label)}</h3>
+    <div class="facts"><div class="fact big"><b style="font-size:1.35rem">👑 ${esc(w.p)}</b><span>King / Queen of the Ring</span></div>
+      <div class="fact big"><b>${sign(w.avg)}</b><span>Average over the 1% value</span></div>
+      <div class="fact"><b>${w.met} of ${w.n}</b><span>Contests over the 1% value</span></div></div>
+    <p class="small">Biggest result over the 1% value: ${esc(w.best.x.e.t)} (${fmt(w.best.x.v)} against ${fmt(w.best.x.e.op)}, ${sign(w.best.o)}).</p>
+    ${rows.length > 1 ? `<h3 class="sec">Next on the throne</h3><ol start="2">${rows.slice(1, 5).map(li).join("")}</ol>` : ""}
+    ${explain}</div>`;
+}
 function mvpBox(mi){
   if (!isDone(mi)) return "";
   const minC = CONFIG.minMonthContests, all = doneSet();
-  const cands = perfStats(all, null).filter(r => isCurrent(r.p)).map(r => {
+  const tenure = p => M.filter((m, i) => i <= mi && (m.players || []).includes(p)).length;   // months on the sheet up to and including this month
+  const cands = perfStats(all, null).filter(r => isCurrent(r.p) && tenure(r.p) > CONFIG.mostImprovedAfterMonths).map(r => {
     const cur = r.ms.find(x => x.mi === mi), prev = r.ms.filter(x => x.mi < mi && x.n >= minC);
     if (!cur || cur.n < minC || !prev.length) return null;
     const earlier = prev.reduce((s, x) => s + x.avg, 0) / prev.length;
-    return {p: r.p, cur: cur.avg, n: cur.n, earlier, delta: cur.avg - earlier};
+    return {p: r.p, cur: cur.avg, n: cur.n, earlier, delta: cur.avg - earlier, dr: Math.round(cur.avg) - Math.round(earlier)};
   }).filter(Boolean).sort((a, b) => b.delta - a.delta || b.cur - a.cur);
-  const explain = `<p class="small">MVP of the month = the current player who improved the most. Each contest turns a player's position into a score from 0 to 100 (first place = 100, last = 0). A player's month score is the average of those, and improvement is this month's score minus their average in the earlier completed months. A player needs at least ${minC} contests in the month and an earlier month to compare with. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`;
-  if (!cands.length || cands[0].delta <= 0) return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)}</h3><p>${cands.length ? "No one improved on their earlier months this month." : "Not enough earlier months to compare yet."}</p>${explain}</div>`;
+  const explain = `<p class="small">Most improved = the current player who improved the most. Only players who have been in the faction for more than ${CONFIG.mostImprovedAfterMonths} months can win. Each contest turns a player's position into a score from 0 to 100 (first place = 100, last = 0). A player's month score is the average of those, and improvement is this month's score minus their average in the earlier completed months. A player needs at least ${minC} contests in the month and an earlier month to compare with. Only the flash feud combined total counts, not flash feuds 1 to 4.</p>`;
+  if (!cands.length || cands[0].delta <= 0) return `<div class="box top-b" style="margin-bottom:14px"><h3>Most improved · ${esc(M[mi].label)}</h3><p>${cands.length ? "No one improved on their earlier months this month." : "No one is eligible yet: a player needs more than " + CONFIG.mostImprovedAfterMonths + " months in the faction, an earlier month to compare with, and at least " + minC + " contests this month."}</p>${explain}</div>`;
   const w = cands[0], mine = playerRows(w.p, new Set([mi])).filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
   const why = mvpWhy(w, mi, minC);
-  const li = (r, i) => `<li><b>${esc(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.cur)} out of 100 (+${Math.round(r.delta)})</i></li>`;
-  return `<div class="box top-b" style="margin-bottom:14px"><h3>MVP of the month · ${esc(M[mi].label)} <span class="small">· scores are out of 100: 100 = best, 50 = middle of the field, 0 = last</span></h3>
-    <div class="facts"><div class="fact big"><b style="font-size:1.35rem">🏆 ${esc(w.p)}</b><span>Most improved</span></div>
-      <div class="fact big"><b>+${Math.round(w.delta)}</b><span>Score out of 100: ${Math.round(w.earlier)} before → ${Math.round(w.cur)} this month</span></div>
+  const li = (r, i) => `<li><b>${esc(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.cur)} out of 100 (+${r.dr})</i></li>`;
+  return `<div class="box top-b" style="margin-bottom:14px"><h3>Most improved · ${esc(M[mi].label)} <span class="small">· scores are out of 100: 100 = best, 50 = middle of the field, 0 = last</span></h3>
+    <div class="facts"><div class="fact big"><b style="font-size:1.35rem">🏆 ${esc(w.p)}</b><span>Most improved of the month</span></div>
+      <div class="fact big"><b>+${w.dr}</b><span>Score out of 100: ${Math.round(w.earlier)} before → ${Math.round(w.cur)} this month</span></div>
       <div class="fact"><b>${w.n}</b><span>Contests this month</span></div></div>
     ${mine ? `<p class="small">Best result: ${esc(mine.e.t)} (position ${mine.pos} of ${mine.e.n}).</p>` : ""}
     ${why}
@@ -737,9 +768,10 @@ function viewPerf(){
   const mSel = doneSet();
   html($("#controls"), `<label class="f">Search player<input type="search" id="pq" list="pl" placeholder="Type a name" autocomplete="off"></label>
     <label class="f">Contests<select id="cat">${catKeys().map(k=>`<option>${esc(k)}</option>`).join("")}</select></label>
-    <label class="f">MVP of the month<select id="mvpm">${[...doneSet()].sort((a, b) => b - a).map(mi => `<option value="${mi}">${esc(M[mi].label)}</option>`).join("")}</select></label>`);
+    <label class="f">Most improved month<select id="mvpm">${[...doneSet()].sort((a, b) => b - a).map(mi => `<option value="${mi}">${esc(M[mi].label)}</option>`).join("")}</select></label>
+    <label class="f">King / Queen month<select id="kqm">${kqMonths().length ? kqMonths().map(mi => `<option value="${mi}">${esc(M[mi].label)}</option>`).join("") : `<option value="-1">from ${esc(CONFIG.kingQueenFrom)}</option>`}</select></label>`);
   $("#controls").append(multi("Months", monthOpts, mSel, draw));
-  $("#pq").oninput = draw; $("#cat").onchange = draw; $("#mvpm").onchange = draw;
+  $("#pq").oninput = draw; $("#cat").onchange = draw; $("#mvpm").onchange = draw; $("#kqm").onchange = draw;
   function draw(){
     const raw = perfStats(mSel, CATS[$("#cat").value]);   // players who have left the faction are not part of the lists, ranks or table; searching a name still finds them
     const all = rankFair(raw.filter(r => isCurrent(r.p)), (a, b) => b.avg - a.avg || b.n - a.n), gone = raw.filter(r => !isCurrent(r.p)).map(r => ({...r, i: null}));
@@ -757,11 +789,11 @@ function viewPerf(){
     const grow = pool.filter(r => r.delta != null && r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 10);
     const fall = pool.filter(r => r.delta != null && r.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 10);
     const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.avg)} · ${trendTxt(r)}</i></li>`;
-    const liD = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
+    const liD = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.dr > 0 ? "+" : ""}${r.dr})</i></li>`;
     const none = '<li><i>None yet</i></li>';
     const flagged = all.filter(r => flagBottom(r) && roster(r.p) !== "quit").sort((a, b) => b.low / b.n - a.low / a.n || b.n - a.n);
     const liB = r => `<li><b>${esc(r.p)}</b><i>${r.low} of ${r.n} contests (${Math.round(r.low / r.n * 100)}%)</i></li>`;
-    const mvpHtml = mvpBox(+($("#mvpm").value || -1));
+    const mvpHtml = kqBox(+($("#kqm").value || -1)) + mvpBox(+($("#mvpm").value || -1));
     html($("#out"), `
       ${mvpHtml}
       <div class="box bot-b" style="margin-bottom:14px"><h3>Consistently in the bottom 25% <span class="small">· in the bottom quarter in ${CONFIG.consistentBottomShare}% or more of their contests (at least ${CONFIG.consistentBottomMin} contests)</span></h3><ol>${flagged.length ? flagged.map(liB).join("") : "<li><i>No one is flagged</i></li>"}</ol></div>
@@ -790,7 +822,7 @@ function reviewPanel(me, rk, total, mine, minN){
   if (!me) return "";
   const lab = r => mon(r.mi) + ": " + r.e.t;
   const lvl = me.avg >= 75 ? "a top performer" : me.avg >= 55 ? "above average" : me.avg >= 40 ? "mid-table" : me.avg >= 25 ? "below average" : "near the bottom of the faction";
-  const d = me.delta == null ? 0 : Math.abs(Math.round(me.delta));
+  const d = me.delta == null ? 0 : Math.abs(me.dr);
   const best = [...mine].filter(r => r.e.ty !== "Rank" && r.e.ty !== "Average").sort((a, b) => a.pos / a.e.n - b.pos / b.e.n)[0];
   const lines = [
     `${esc(me.p)} is <b>${lvl}</b>: score ${Math.round(me.avg)} out of 100, ${rk == null ? (!isCurrent(me.p) ? "no longer in the faction, so not ranked" : `not ranked yet: ${me.n} contest${me.n === 1 ? "" : "s"} so far and ${minN || "more"} are needed`) : `number ${rk} of ${total} ranked players`}.`,
@@ -830,8 +862,8 @@ function growthPlan(me, mine){
   if (weak.length && me.low) tips.push(`<b>Lift the lowest finishes.</b> ${weak.map(r => `${esc(mon(r.mi) + ": " + r.e.t)} (position ${r.pos} of ${r.e.n})`).join("; ")}. These pull the average down most.`);
   if (me.delta != null && me.trend === "Declining"){
     const w = me.ms.reduce((a, x, i, arr) => i && arr[i - 1].avg - x.avg > (a ? a.d : 0) ? {x, d: arr[i - 1].avg - x.avg} : a, null);
-    tips.push(`<b>Reverse the decline.</b> Down ${Math.abs(Math.round(me.delta))} points on earlier months${w ? `, with the biggest drop in ${esc(mon(w.x.mi))} (${Math.round(w.d)} points)` : ""}. Worth checking what changed that month.`);
-  } else if (me.delta != null && me.trend === "Improving") tips.push(`<b>Keep going.</b> Up ${Math.round(me.delta)} points on earlier months, so whatever changed is working.`);
+    tips.push(`<b>Reverse the decline.</b> Down ${Math.abs(me.dr)} points on earlier months${w ? `, with the biggest drop in ${esc(mon(w.x.mi))} (${Math.round(w.d)} points)` : ""}. Worth checking what changed that month.`);
+  } else if (me.delta != null && me.trend === "Improving") tips.push(`<b>Keep going.</b> Up ${me.dr} points on earlier months, so whatever changed is working.`);
   const bands = [[25, "below average"], [40, "mid-table"], [55, "above average"], [75, "a top performer"]], nxt = bands.find(([b]) => b > me.avg);
   if (nxt){
     const fld = [...core.map(r => r.e.n)].sort((a, b) => a - b)[Math.floor(core.length / 2)], gap = nxt[0] - me.avg;
@@ -1027,7 +1059,7 @@ function viewMgmt(){
       if (alt) return html($("#out"), `<div class="note"><b>${esc(alt)}</b> isn't management. No month's name cell has a role code (LD), (EF), (OF) or (CO) after the name. This is how the name reads in the sheet: ${esc(seen || "not found")}</div>` + table);
       return html($("#out"), (exact ? `<h2>${esc(exact.p)}${rosterPill(exact.p)}</h2><p class="small">${esc(roleHistory(exact.p))}</p>` + reviewPanel(exact, exact.i, ps.ranked, playerRows(exact.p, mSel), ps.rankMin) : "") + table);
     }
-    const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
+    const li = r => `<li><b>${esc(r.p)}${rosterPill(r.p)}</b><i>${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.dr > 0 ? "+" : ""}${r.dr})</i></li>`;
     const grow = mg.filter(r => r.delta != null && r.delta >= CONFIG.trendPoints).sort((a, b) => b.delta - a.delta);
     const fall = mg.filter(r => r.delta != null && r.delta <= -CONFIG.trendPoints).sort((a, b) => a.delta - b.delta);
     const flagged = mg.filter(flagBottom);
@@ -1178,7 +1210,7 @@ function viewWatch(){
     const pfs = perfStats(mSel, [...tSel]).filter(r => isCurrent(r.p) && r.n >= MINE && flagBottom(r));
     const stuck = pfs.filter(r => r.delta != null && r.delta < CONFIG.trendPoints).sort((a, b) => b.low / b.n - a.low / a.n || a.delta - b.delta);
     const noTrend = pfs.filter(r => r.delta == null).length;
-    const li3 = r => `<li><b>${esc(r.p)}</b><i>${r.low} of ${r.n} in bottom 25% · ${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.delta > 0 ? "+" : ""}${Math.round(r.delta)})</i></li>`;
+    const li3 = r => `<li><b>${esc(r.p)}</b><i>${r.low} of ${r.n} in bottom 25% · ${Math.round(r.earlier)} → ${Math.round(r.latest.avg)} (${r.dr > 0 ? "+" : ""}${r.dr})</i></li>`;
     const top3 = worst.slice(0, 3);
     const chart3 = `<div class="box bot-b" style="margin-bottom:14px"><h3>Top 3 most at risk <span class="small">· lowest 1% hit rate among current players</span></h3>${top3.length ? top3.map(r => `<div class="mbar"><b style="width:140px;font:600 .95rem var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.p)}">${esc(r.p)}</b><div><i class="lo" style="width:${Math.max(2, Math.round(r.pct * 100))}%"></i></div><span style="width:120px">${Math.round(r.pct * 100)}% · ${r.below} missed</span></div>`).join("") : "<p class=\"small\">No one is below a 1% value.</p>"}</div>`;
     const stuckBox = `<div class="box bot-b" style="margin-bottom:14px"><h3>Constantly in the bottom 25% with no growth <span class="small">· bottom quarter in ${CONFIG.consistentBottomShare}% or more of contests and improving by less than ${CONFIG.trendPoints} points</span></h3><ol>${stuck.length ? stuck.map(li3).join("") : "<li><i>No one</i></li>"}</ol>${noTrend ? `<p class="small">${noTrend} more current player${noTrend === 1 ? " is" : "s are"} consistently in the bottom 25% but ${noTrend === 1 ? "doesn't" : "don't"} have enough finished months to judge growth yet.</p>` : ""}</div>`;
