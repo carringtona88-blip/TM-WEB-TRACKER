@@ -133,6 +133,7 @@ details.box>summary{cursor:pointer}
     <button role="tab" data-v="mgmt">Management</button>
     <button role="tab" data-v="rank">Rankings</button>
     <button role="tab" data-v="watch">Watchlist</button>
+    <button role="tab" data-v="live">In progress</button>
   </nav>
 </div></div>
 <main>
@@ -167,6 +168,8 @@ const CONFIG = {
   trendPoints: 5,
   // A month only counts toward trends once it has at least this many contests (so a month that is still filling in can't swing the result).
   minMonthContests: 3,
+  version: "13 Nov 2026, 21:40 · In progress tab",   // shown next to the "Live from Google Sheets" line, so you can see which file is running
+  liveMinContests: 2,   // In progress tab: contests a player needs so far to be listed as an improver or in the forecast
   mostImprovedAfterMonths: 3,   // Most improved: the player must have been in the faction for MORE than this many months
   kingQueenFrom: "November 2026",   // King/Queen of the Ring starts from this month
   watchMinEvents: 5,   // Watchlist only includes players with at least this many checked contests
@@ -425,11 +428,11 @@ async function load(){
   try{
     M = await loadLive();
     if (!M.some(m => m.events.length)) throw new Error("the tabs were read but no contests were found");
-    $("#src").textContent = "Live from Google Sheets · loaded " + new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) + " · " + CONFIG.firstMonth.split(" ")[0] + " onwards";
+    $("#src").textContent = "Live from Google Sheets · loaded " + new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) + " · " + CONFIG.firstMonth.split(" ")[0] + " onwards · version " + CONFIG.version;
   } catch (err){
     if (window.DATA){
       M = JSON.parse(JSON.stringify(window.DATA.months));
-      $("#src").textContent = "Saved copy (" + CONFIG.firstMonth.split(" ")[0] + " onwards)";
+      $("#src").textContent = "Saved copy (" + CONFIG.firstMonth.split(" ")[0] + " onwards) · version " + CONFIG.version;
       b.hidden = false; b.className = "warn";
       b.innerHTML = CONFIG.scriptUrl
         ? "Couldn't reach your Google script link (" + esc(err.message || err) + "). Check the link ends in <code>/exec</code> and that it was deployed with access set to <b>Anyone</b>. Showing the saved copy for now."
@@ -689,6 +692,50 @@ function growthExplainer(all){
     <p class="small">Each month counts equally, whether it had 3 contests or 10, and a month only counts toward the trend once it has at least ${CONFIG.minMonthContests} contests, so a month that is still filling in is shown but not used. Only the flash feud combined total is used, not flash feuds 1 to 4. The ${CONFIG.trendPoints} point threshold can be changed in the settings at the top of the file.</p></details>`;
 }
 
+/* ============ IN PROGRESS VIEW ============ */
+// The month that is still being filled in: who is below the 1% value so far, who is improving, and where the King/Queen of the Ring race stands.
+// Nothing here is final and none of it counts toward profiles, rankings or the watchlist until the month is Completed.
+function viewLive(){
+  const open = M.map((_, i) => i).filter(i => !isDone(i)).sort((a, b) => b - a);
+  html($("#controls"), "");
+  if (!open.length) return html($("#out"), '<div class="empty">No month is in progress. Every month on the sheet is marked Completed.</div>');
+  if (open.length > 1) { html($("#controls"), `<label class="f">Month<select id="lm">${open.map(i => `<option value="${i}">${esc(M[i].label)}</option>`).join("")}</select></label>`); $("#lm").onchange = draw; }
+  draw();
+  function draw(){
+    const mi = open.length > 1 ? +$("#lm").value : open[0], minL = CONFIG.liveMinContests, evs = M[mi].events.filter(inStats);
+    // 1. below the 1% value so far
+    const miss = {}, seen = {};
+    evs.forEach(e => { if (!e.op) return; Object.keys(e.s).forEach(p => { if (!isCurrent(p)) return; const st = status(e, e.s[p], p); if (st !== "met" && st !== "below") return; seen[p] = (seen[p] || 0) + 1; if (st === "below") (miss[p] = miss[p] || []).push({e, v: e.s[p]}); }); });
+    const below = Object.keys(miss).map(p => ({p, miss: miss[p], n: seen[p]})).sort((a, b) => b.miss.length - a.miss.length || b.miss.length / b.n - a.miss.length / a.n);
+    const checked = Object.keys(seen).length, clean = checked - below.length;
+    const belowHtml = `<h2>Below the 1% value so far</h2>
+      <p>${below.length ? `<b>${below.length}</b> of ${checked} current players have missed the 1% value in at least one contest so far. <b>${clean}</b> have not missed any.` : `No current player has missed the 1% value so far (${checked} checked).`}</p>
+      ${below.length ? `<div class="wrap"><table><thead><tr><th>Player</th><th class="n">Missed</th><th class="n">Checked</th><th>Contests missed</th></tr></thead><tbody>${below.map(r => `<tr><td>${esc(r.p)}${rosterPill(r.p)}</td><td class="n">${r.miss.length}</td><td class="n">${r.n}</td><td>${r.miss.map(m => `${esc(m.e.t)} (${m.e.op ? Math.round(m.v / m.e.op * 100) : 0}% of ${short(m.e.op)})`).join("; ")}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    // 2. top improvers so far, with how their month average has moved contest by contest
+    const sc = r => r.e.n > 1 && r.pos != null ? (1 - (r.pos - 1) / (r.e.n - 1)) * 100 : null;
+    const tenure = p => M.filter((m, i) => i <= mi && (m.players || []).includes(p)).length;
+    const early = new Map(perfStats(doneSet(), null).map(r => [r.p, r.ms.filter(x => x.mi < mi && x.n >= CONFIG.minMonthContests)]));
+    const imp = perfStats(new Set([mi]), null).filter(r => isCurrent(r.p) && tenure(r.p) > CONFIG.mostImprovedAfterMonths && r.n >= minL && (early.get(r.p) || []).length).map(r => {
+      const prev = early.get(r.p), earlier = prev.reduce((s, x) => s + x.avg, 0) / prev.length;
+      const seq = playerRows(r.p, new Set([mi])).map(sc).filter(v => v != null); let t = 0; const run = seq.map((v, i) => (t += v) / (i + 1));
+      return {p: r.p, earlier, cur: r.avg, n: r.n, dr: Math.round(r.avg) - Math.round(earlier), delta: r.avg - earlier, run};
+    }).sort((a, b) => b.delta - a.delta).slice(0, 5);
+    const impHtml = `<h2>Top improvers so far <span class="small">· scores out of 100 (100 = best)</span></h2>
+      ${imp.length ? `<div class="wrap"><table><thead><tr><th>Player</th><th class="n">Earlier months</th><th class="n">${esc(M[mi].label)} so far</th><th class="n">Change</th><th>Month average after each contest</th></tr></thead><tbody>${imp.map(r => `<tr><td>${esc(r.p)}</td><td class="n">${Math.round(r.earlier)}</td><td class="n">${Math.round(r.cur)} <span class="small">(${r.n})</span></td><td class="n">${r.dr > 0 ? '<span class="up">+' : '<span class="down">'}${r.dr}</span></td><td>${r.run.map(v => Math.round(v)).join(" → ")}</td></tr>`).join("")}</tbody></table></div>` : `<p>Nobody is eligible yet. A player needs more than ${CONFIG.mostImprovedAfterMonths} months in the faction, an earlier month to compare with, and at least ${minL} contests so far.</p>`}`;
+    // 3. King / Queen of the Ring forecast
+    const ks = kqStart(), withOp = evs.filter(e => e.m === "score" && e.op).length;
+    let kqHtml;
+    if (ks < 0 || mi < ks) kqHtml = `<h2>King / Queen of the Ring forecast</h2><p>King/Queen of the Ring starts with ${esc(CONFIG.kingQueenFrom)}, so there is no forecast for ${esc(M[mi].label)}.</p>`;
+    else {
+      const rows = kqStandings(mi, minL), w = rows[0], sign = v => (v >= 0 ? "+" : "") + Math.round(v) + "%";
+      kqHtml = `<h2>King / Queen of the Ring forecast</h2>${rows.length ? `<p><b>${esc(w.p)}</b> leads at ${sign(w.avg)} over the 1% value on average, after ${withOp} contest${withOp === 1 ? "" : "s"} with a 1% value.</p>
+        <div class="wrap"><table><thead><tr><th class="n">#</th><th>Player</th><th class="n">Average over 1% value</th><th class="n">Behind the leader</th><th class="n">Contests</th><th class="n">Over the 1% value</th></tr></thead><tbody>${rows.slice(0, 8).map((r, i) => `<tr><td class="n">${i + 1}</td><td>${i === 0 ? "👑 " : ""}${esc(r.p)}</td><td class="n">${sign(r.avg)}</td><td class="n">${i ? Math.round(w.avg - r.avg) + " points" : "—"}</td><td class="n">${r.n}</td><td class="n">${r.met} of ${r.n}</td></tr>`).join("")}</tbody></table></div>` : `<p>No one has ${minL} contests with a 1% value yet.</p>`}`;
+    }
+    html($("#out"), `${ipNote(mi)}<h2>${esc(M[mi].label)} · in progress <span class="small">· ${evs.length} contest${evs.length === 1 ? "" : "s"} filled in so far</span></h2>${belowHtml}${impHtml}${kqHtml}
+      <p class="small">Everything on this page is a snapshot of a month that is still being filled in. Standings will move as more contests are entered, and none of it counts toward profiles, rankings, the watchlist or the final Most improved and King/Queen results until the month is marked Completed. Improvement compares this month's average with a player's earlier completed months, and the figures after each contest are the month average as contests were added. The forecast uses the King/Queen method: the average percentage over the 1% value, with no cap, only for contests so far with a 1% value, and it is not a prediction of the final winner.</p>`);
+  }
+}
+
 /* ---------- Most improved of the month ---------- */
 // Most improved in a month: the player whose average contest score (0 to 100) that month rose the most compared with their average in the earlier completed months.
 // Where an MVP's improvement came from: contest type by contest type, this month against their earlier months.
@@ -717,18 +764,21 @@ function mvpWhy(w, mi, minC){
 /* ---------- King / Queen of the Ring (from November): who goes furthest over the 1% value ---------- */
 const kqStart = () => M.findIndex(m => m.label.toLowerCase().startsWith(String(CONFIG.kingQueenFrom).toLowerCase()));
 const kqMonths = () => { const s = kqStart(); return s < 0 ? [] : [...doneSet()].filter(mi => mi >= s).sort((a, b) => b - a); };
-function kqBox(mi){
-  const s = kqStart(), minC = CONFIG.minMonthContests;
-  const explain = `<p class="small">King/Queen of the Ring is about how far over the 1% value a player goes. For every contest with a 1% value, a player's result is turned into a percentage over (or under) that value: 1% value of 14k and a score of 21k is 50% over. The month's figure is the average of those percentages across the contests they entered, so a player who is well over the value every time wins, and a miss pulls the figure down. Every contest counts in full, with no cap, so the figure is exactly how far over the value the player went. Excused contests don't count. A player needs at least ${minC} contests with a 1% value that month and must still be in the faction. It runs from ${esc(CONFIG.kingQueenFrom)}. Only the flash feud combined total counts, not flash feuds 1 to 4. Contests with no 1% value can't be included.</p>`;
-  if (s < 0 || !isDone(mi) || mi < s) return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring</h3><p>${s < 0 ? `Starts with ${esc(CONFIG.kingQueenFrom)}.` : M[s] && !isDone(s) ? `${esc(M[s].label)} is still in progress. The first King/Queen of the Ring is announced when the month is marked Completed.` : `Starts with ${esc(CONFIG.kingQueenFrom)}.`}</p>${explain}</div>`;
+function kqStandings(mi, minC){
   const rows = [];
-  Object.values(perfStats(new Set([mi]), null)).forEach(r => { if (!isCurrent(r.p)) return;
+  perfStats(new Set([mi]), null).forEach(r => { if (!isCurrent(r.p)) return;
     const cs = playerRows(r.p, new Set([mi])).filter(x => x.e.m === "score" && x.e.op && x.v != null && x.st !== "excused");
     if (cs.length < minC) return;
     const over = cs.map(x => ({x, o: (x.v / x.e.op - 1) * 100})), avg = over.reduce((t, z) => t + z.o, 0) / over.length;
     rows.push({p: r.p, avg, n: cs.length, met: cs.filter(x => x.v >= x.e.op).length, best: over.reduce((a, z) => z.o > a.o ? z : a)});
   });
-  rows.sort((a, b) => b.avg - a.avg || b.met / b.n - a.met / a.n);
+  return rows.sort((a, b) => b.avg - a.avg || b.met / b.n - a.met / a.n);
+}
+function kqBox(mi){
+  const s = kqStart(), minC = CONFIG.minMonthContests;
+  const explain = `<p class="small">King/Queen of the Ring is about how far over the 1% value a player goes. For every contest with a 1% value, a player's result is turned into a percentage over (or under) that value: 1% value of 14k and a score of 21k is 50% over. The month's figure is the average of those percentages across the contests they entered, so a player who is well over the value every time wins, and a miss pulls the figure down. Every contest counts in full, with no cap, so the figure is exactly how far over the value the player went. Excused contests don't count. A player needs at least ${minC} contests with a 1% value that month and must still be in the faction. It runs from ${esc(CONFIG.kingQueenFrom)}. Only the flash feud combined total counts, not flash feuds 1 to 4. Contests with no 1% value can't be included.</p>`;
+  if (s < 0 || !isDone(mi) || mi < s) return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring</h3><p>${s < 0 ? `Starts with ${esc(CONFIG.kingQueenFrom)}.` : M[s] && !isDone(s) ? `${esc(M[s].label)} is still in progress. The first King/Queen of the Ring is announced when the month is marked Completed.` : `Starts with ${esc(CONFIG.kingQueenFrom)}.`}</p>${explain}</div>`;
+  const rows = kqStandings(mi, minC);
   if (!rows.length) return `<div class="box top-b" style="margin-bottom:14px"><h3>King / Queen of the Ring · ${esc(M[mi].label)}</h3><p>No one has ${minC} contests with a 1% value yet.</p>${explain}</div>`;
   const w = rows[0], sign = v => (v >= 0 ? "+" : "") + Math.round(v) + "%";
   const li = r => `<li><b>${esc(r.p)}</b><i>${sign(r.avg)} on average · met the 1% value ${r.met} of ${r.n}</i></li>`;
@@ -1233,7 +1283,7 @@ function viewWatch(){
 }
 
 /* ============ TABS & START ============ */
-const views = {event: viewEvent, player: viewPlayer, faction: viewFaction, perf: viewPerf, mgmt: viewMgmt, rank: viewRank, watch: viewWatch};
+const views = {event: viewEvent, player: viewPlayer, faction: viewFaction, perf: viewPerf, mgmt: viewMgmt, rank: viewRank, watch: viewWatch, live: viewLive};
 function go(v){
   current = v;
   document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
