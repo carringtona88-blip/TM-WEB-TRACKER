@@ -168,7 +168,7 @@ const CONFIG = {
   trendPoints: 5,
   // A month only counts toward trends once it has at least this many contests (so a month that is still filling in can't swing the result).
   minMonthContests: 3,
-  version: "13 Nov 2026, 21:40 · In progress tab",   // shown next to the "Live from Google Sheets" line, so you can see which file is running
+  version: "16 Nov 2026, 19:30 · Excused = 1% value",   // shown next to the "Live from Google Sheets" line, so you can see which file is running
   liveMinContests: 2,   // In progress tab: contests a player needs so far to be listed as an improver or in the forecast
   mostImprovedAfterMonths: 3,   // Most improved: the player must have been in the faction for MORE than this many months
   kingQueenFrom: "November 2026",   // King/Queen of the Ring starts from this month
@@ -403,6 +403,9 @@ function derive(){
       if (afterQuit || joined.has(p) || e.f[p] === "excused") delete e.s[p];
     }));
   });
+  // Excused (EX): the player is given exactly the 1% value for that contest. It counts as met, it takes a position in the contest like a real score
+  // of that size, and it counts in their favour everywhere (hit rate, performance, rankings, King/Queen = 0% over). Whatever was typed in the cell is replaced.
+  M.forEach(m => m.events.forEach(e => { if (e.m !== "score" || !e.op || !inStats(e)) return; Object.entries(e.f || {}).forEach(([p, fl]) => { if (fl === "excused") e.s[p] = e.op; }); }));
   const lastM = M[M.length - 1];
   CUR = new Set(lastM ? (lastM.players || []).filter(p => (lastM.pf || {})[p] !== "quit") : []);
   // Management (in-progress months count for who holds a role now; scores still use completed months only): anyone with a role code in any month is management, whatever role (or no role) they have in other months.
